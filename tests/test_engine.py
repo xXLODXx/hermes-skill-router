@@ -244,6 +244,23 @@ def test_prune_removes_non_causal_words():
     assert engine.prune_lexicon(lexicon, small) == lexicon
 
 
+def test_prune_spares_fresh_words():
+    """Frische Wörter (Gesamt-Kookkurrenz < MIN_COOCCUR) werden verschont,
+    damit neue Assoziationen nach dem Lift-Start anwachsen können."""
+    stats = {
+        "total_calls": 100,
+        "words": {"windows": 1, "bitte": 60},
+        "tools": {"windows-ssh-remote": 1, "adb": 30},
+    }
+    lexicon = {
+        "windows": {"windows-ssh-remote": 1},  # frisch, co gesamt 1 -> bleibt
+        "bitte": {"adb": 30},                  # genug Daten, kein Signal -> weg
+    }
+    pruned = engine.prune_lexicon(lexicon, stats)
+    assert "windows" in pruned
+    assert "bitte" not in pruned
+
+
 def test_cluster_words_identifies_causal_group():
     """Cluster = Wörter mit kausaler Assoziation zu einem Tool."""
     stats = {

@@ -199,11 +199,16 @@ def lift(word: str, tool: str, lexicon: dict, stats: dict) -> float:
 def prune_lexicon(lexicon: dict, stats: dict) -> dict:
     """Nutzungsbasierte Bereinigung: Woerter ohne kausale Assoziation zu IRGENDEINEM
     Tool (bestes Lift < LIFT_THRESHOLD mit Minimum-Support) entfernen.
-    Erst ab MIN_CALLS_FOR_LIFT — vorher ist der Lift zu verrauscht."""
+    Erst ab MIN_CALLS_FOR_LIFT — vorher ist der Lift zu verrauscht.
+    Frische Woerter (Gesamt-Kookkurrenz < MIN_COOCCUR) werden verschont,
+    damit neue Assoziationen nach dem Lift-Start noch anwachsen koennen."""
     if stats.get("total_calls", 0) < MIN_CALLS_FOR_LIFT:
         return lexicon
     keep = {}
     for w, tools in lexicon.items():
+        if sum(tools.values()) < MIN_COOCCUR:
+            keep[w] = tools  # zu wenig Daten — kann noch wachsen
+            continue
         best = max(
             (lift(w, t, lexicon, stats) for t, c in tools.items() if c >= MIN_COOCCUR),
             default=0.0,
