@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hermes-skill-router"
+version = "1.0.0"
+description = "Hermes plugin: task-aware, self-learning skill discovery"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+
+[project.entry-points."hermes_agent.plugins"]
+skill-router = "skill_router:register"
+
+[tool.setuptools]
+packages = ["skill_router"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Pre-commit-Hook: Privacy-Guard für persönliche Daten.
+# Installiert via: scripts/install-guard.sh  (oder manuell: git config core.hooksPath .githooks)
+set -euo pipefail
+cd "$(dirname "$0")/.."
+python3 scripts/guard.py

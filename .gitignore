@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+.venv/
+# Learned associations can contain words from user messages — never commit.
+learned_keywords.json
+*.json.tmp
