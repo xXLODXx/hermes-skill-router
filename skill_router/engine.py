@@ -28,6 +28,7 @@ from pathlib import Path
 DEFAULT_MATRIX_REL: Path | None = None
 MAX_EXTRA_SKILLS = 15
 LEXICON_CAP = 400
+GENERIC_SKILL_THRESHOLD = 5  # Wort mit >=5 Skill-Assoziationen = generisch: nicht lernen, nicht gewichten
 
 STOPWORDS = {
     "task", "tasks", "plan", "app", "apps", "tool", "tools", "skill", "skills",
@@ -225,18 +226,20 @@ def _task_words(user_message: str) -> set[str]:
 
 # ── Learning hardening (privacy) ─────────────────────────────────────────────
 
-_ID_PATTERN = re.compile(r"^[a-z0-9]{8,}$")          # hashes/IDs (8+ alnum, e.g. t_<id>)
+_ID_PATTERN = re.compile(r"^(?=.*\d)[a-z0-9]{8,}$")  # hashes/IDs (8+ alnum WITH digit); pure-letter words are vocabulary
 _TASK_ID_PATTERN = re.compile(r"^t_[a-z0-9]+$")       # task IDs (t_<id>)
 MAX_LEARN_WORDS = 5                                   # max keywords per learning event
 MAX_LEARN_MESSAGE_WORDS = 40                          # longer messages = context, not learned
 
 
-def learn_words(user_message: str) -> list[str]:
+def learn_words(user_message: str, lexicon: dict | None = None) -> list[str]:
     """Task keywords for learning — in message order, hardened.
 
     - Only from SHORT messages (<= 40 words): long messages carry context
       or explanations, not concise task keywords.
     - IDs, hashes, task IDs (t_...) are never learned.
+    - Words already associated with >= GENERIC_SKILL_THRESHOLD skills are
+      skipped (generic vocabulary, e.g. from mass skill-load sessions).
     - At most 5 keywords per event (the first relevant ones).
     """
     if len(user_message.split()) > MAX_LEARN_MESSAGE_WORDS:
@@ -247,6 +250,10 @@ def learn_words(user_message: str) -> list[str]:
             continue
         if _ID_PATTERN.match(w) or _TASK_ID_PATTERN.match(w):
             continue
+        if lexicon:
+            entry = lexicon.get(w)
+            if entry and len(entry) >= GENERIC_SKILL_THRESHOLD:
+                continue  # generisch — kein weiteres Lernen
         result.append(w)
         if len(result) >= MAX_LEARN_WORDS:
             break
@@ -294,6 +301,8 @@ def build_injection(
         score = len((words - STOPWORDS) & hay)
         # Gelernte Assoziationen: count als Gewicht
         for w in words & set(lexicon):
+            if len(lexicon[w]) >= GENERIC_SKILL_THRESHOLD:
+                continue  # generisches Wort — kein Gewicht
             score += lexicon[w].get(s["name"], 0)
         if score > 0:
             skill_hits.append((score, s))
@@ -353,7 +362,7 @@ def learn_from_load(
     if skill_name in injected_skills or not user_message:
         return lexicon
     changed = False
-    for w in learn_words(user_message):
+    for w in learn_words(user_message, lexicon):
         entry = lexicon.setdefault(w, {})
         entry[skill_name] = entry.get(skill_name, 0) + 1
         changed = True

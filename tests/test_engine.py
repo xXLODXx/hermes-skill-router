@@ -159,6 +159,41 @@ def test_learning_caps_at_five_words(env):
     assert len(updated) <= 5
 
 
+def test_generic_lexicon_word_not_weighted(env):
+    """Wort mit >=5 Skill-Assoziationen ist generisch — erzeugt KEIN Matching-Gewicht."""
+    generic = {
+        "phone": {
+            "calendar-sync": 5,
+            "skill-b": 1,
+            "skill-c": 1,
+            "skill-d": 1,
+            "skill-e": 1,
+        }
+    }
+    out = engine.build_injection("phone", env / "skills", None, generic)
+    assert out is None  # generisches Wort allein matcht keinen Fixture-Skill
+
+    specific = {"phone": {"calendar-sync": 5}}
+    out = engine.build_injection("phone", env / "skills", None, specific)
+    assert out is not None
+    assert "calendar-sync" in out
+
+
+def test_learn_words_skips_generic_entries():
+    generic = {
+        "phone": {
+            "skill-a": 1,
+            "skill-b": 1,
+            "skill-c": 1,
+            "skill-d": 1,
+            "skill-e": 1,
+        }
+    }
+    words = engine.learn_words("phone document issue", generic)
+    assert "phone" not in words  # generisch — nicht mehr lernen
+    assert "document" in words
+
+
 def test_lexicon_roundtrip(tmp_path: Path):
     path = tmp_path / "learned_keywords.json"
     lex = {"handy": {"device-debugging": 2}}

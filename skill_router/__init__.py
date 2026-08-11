@@ -22,8 +22,10 @@ from . import engine
 
 _PLUGIN_DIR = Path(__file__).resolve().parent
 _LEXICON_PATH = _PLUGIN_DIR / "data" / "learned_keywords.json"
+_MAX_LEARN_EVENTS_PER_SESSION = 1  # nur erstes Lern-Event pro Session (Massen-Events vermeiden)
 
 _session_ctx: dict = {"current": None, "last_match": (), "fallback_shown": False}
+_learn_counts: dict[str, int] = {}  # session_id -> Lern-Events (Massen-Events-Bremse)
 
 
 def register(ctx):
@@ -69,6 +71,8 @@ def register(ctx):
     def learn(skill_name: str, action: str, session_id: str, **kwargs):
         if action != "loaded":
             return
+        if _learn_counts.get(session_id, 0) >= _MAX_LEARN_EVENTS_PER_SESSION:
+            return  # nur das erste Lern-Event pro Session
         ctx_ = _session_ctx.get("current")
         if not ctx_:
             return
@@ -76,7 +80,9 @@ def register(ctx):
         updated = engine.learn_from_load(
             ctx_["message"], ctx_["injected"], skill_name, lexicon
         )
-        engine.save_lexicon(updated, _LEXICON_PATH)
+        if updated != lexicon:
+            engine.save_lexicon(updated, _LEXICON_PATH)
+            _learn_counts[session_id] = _learn_counts.get(session_id, 0) + 1
 
     ctx.register_hook("pre_llm_call", inject)
     ctx.register_hook("on_skill_lifecycle", learn)
