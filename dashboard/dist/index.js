@@ -127,7 +127,7 @@
       const label = truncate(c.tool, 22) + " (" + c.count + ")";
       const kw = Math.max(72, label.length * 6.4 + 18);
       return {
-        cand: c, i: i, a: a,
+        cand: c, i: i, a: a, label: label,
         kx: kx, ky: ky, kw: kw,
         ix: cx + iconR * Math.cos(a), iy: cy + iconR * Math.sin(a),
       };
@@ -177,7 +177,7 @@
           x: it.kx - it.kw / 2, y: it.ky - 15, width: it.kw, height: 30,
           rx: 8, className: "sr-mnode-alt",
         }),
-        h("text", { x: it.kx, y: it.ky + 4, textAnchor: "middle", className: "sr-mtext-alt" }, label)
+        h("text", { x: it.kx, y: it.ky + 4, textAnchor: "middle", className: "sr-mtext-alt" }, it.label)
       ));
 
       // Pro/Contra seitlich am Kandidaten
