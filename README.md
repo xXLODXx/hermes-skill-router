@@ -39,10 +39,17 @@ same topic.
 
 ## Installation
 
-### Via pip (recommended)
+### Via Hermes (recommended — native plugin install)
 
 ```bash
-pip install git+https://github.com/<your-org>/hermes-skill-router.git
+hermes plugins install xXLODXx/hermes-skill-router
+hermes plugins enable skill-router
+```
+
+### Via pip
+
+```bash
+pip install git+https://github.com/xXLODXx/hermes-skill-router.git
 hermes plugins enable skill-router
 ```
 
