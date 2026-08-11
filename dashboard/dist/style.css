@@ -1,0 +1,46 @@
+/* Skill Router Dashboard Plugin — Styles */
+.sr-page { display: flex; flex-direction: column; gap: 16px; padding: 4px; }
+
+.sr-stats { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+.sr-stat { min-width: 150px; flex: 1 1 150px; }
+.sr-stat-value { font-size: 26px; font-weight: 700; line-height: 1.1; }
+.sr-stat-label { font-size: 12px; opacity: 0.7; margin-top: 2px; }
+.sr-stat-sub { font-size: 11px; opacity: 0.55; }
+.sr-lift-badge { align-self: center; }
+
+.sr-section-title { margin: 0 0 10px; font-size: 14px; font-weight: 600; }
+
+.sr-table-wrap { overflow-x: auto; max-height: 420px; overflow-y: auto; }
+.sr-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.sr-table th { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--border, #333); opacity: 0.7; font-weight: 600; position: sticky; top: 0; background: var(--background, #111); }
+.sr-table td { padding: 5px 10px; border-bottom: 1px solid var(--border, #222); }
+.sr-word { font-weight: 600; }
+.sr-tool { font-family: monospace; font-size: 12px; opacity: 0.85; }
+
+.sr-badge { font-size: 11px; padding: 2px 8px; border-radius: 999px; font-weight: 600; }
+.sr-badge--causal { background: rgba(22, 163, 74, 0.18); color: #4ade80; }
+.sr-badge--generic { background: rgba(245, 158, 11, 0.18); color: #fbbf24; }
+.sr-badge--observed { background: rgba(107, 114, 128, 0.18); color: #9ca3af; }
+
+.sr-empty { padding: 18px; opacity: 0.65; font-size: 13px; }
+.sr-error { padding: 18px; color: #f87171; font-size: 13px; }
+
+.sr-mindmap { display: flex; flex-direction: column; gap: 8px; }
+.sr-svg { width: 100%; max-width: 940px; height: auto; background: transparent; }
+.sr-node-center { fill: #3b82f6; }
+.sr-label-center { fill: #fff; font-size: 12px; font-weight: 700; }
+.sr-node-tool { fill: #1d4ed8; stroke: #60a5fa; stroke-width: 1.5; }
+.sr-label-tool { fill: #93c5fd; font-size: 11px; font-weight: 600; }
+.sr-node-word { fill: #6b7280; }
+.sr-node-word--causal { fill: #16a34a; stroke: #4ade80; stroke-width: 1.5; }
+.sr-label-word { fill: #cbd5e1; font-size: 10px; }
+.sr-edge { stroke: #4b5563; stroke-width: 1; opacity: 0.6; }
+.sr-edge--causal { stroke: #22c55e; stroke-width: 1.6; opacity: 0.9; }
+
+.sr-legend { display: flex; gap: 16px; font-size: 11px; opacity: 0.8; flex-wrap: wrap; }
+.sr-legend-item { display: inline-flex; align-items: center; gap: 5px; }
+.sr-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; }
+.sr-dot--tool { background: #1d4ed8; }
+.sr-dot--causal { background: #16a34a; }
+.sr-dot--word { background: #6b7280; }
+.sr-dot--edge { background: transparent; border: 2px solid #22c55e; border-radius: 2px; width: 12px; height: 0; }
