@@ -6,12 +6,14 @@ list of routing topics and skills into the first turn of every session — so th
 model no longer has to scan the full skill index and guess.
 
 ```
-### Skill-Routing (automatisch, aufgabenbasiert)
-Erkannte Themen:
-- Dokumenten-Analyse / PoC (Match 1)
-  Pflicht: ocr-and-documents, document-to-action-items
-  Optional: systematic-debugging, meeting-action-items
-Lade passende Skills mit skill_view(name) und befolge deren Regeln.
+### Skill Routing (automatic, task-based)
+Matched topics:
+- Documents / OCR (Match 1)
+  Required: pdf-extraction, action-items
+  Optional: debugging
+Suggested skills (not routed by matrix):
+- productivity/calendar-sync [Calendar, Schedule]
+Load matching skills with skill_view(name) and follow their instructions.
 ```
 
 ## Why
@@ -74,7 +76,7 @@ Restart Hermes (CLI/TUI/desktop) — plugins load at process start.
 
 ### Routing-matrix format (optional)
 
-A markdown file with numbered topics, keyword lines and Pflicht/Optional
+A markdown file with numbered topics, keyword lines and Required/Optional
 tables, e.g.:
 
 ```markdown
@@ -84,11 +86,11 @@ tables, e.g.:
 
 | Kategorie | Skills |
 |-----------|--------|
-| **Pflicht** | `ocr-and-documents`, `document-to-action-items` |
-| **Optional** | `systematic-debugging` |
+| **Required** | `pdf-extraction`, `action-items` |
+| **Optional** | `debugging` |
 ```
 
-Topics whose keywords match the task are injected with their Pflicht/Optional
+Topics whose keywords match the task are injected with their Required/Optional
 skill lists; skills already routed by the matrix are not duplicated in the
 auto-suggested section.
 

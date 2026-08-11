@@ -15,7 +15,7 @@ MATRIX = """# Test-Matrix
 
 | Kategorie | Skills |
 |-----------|--------|
-| **Pflicht** | `pdf-extraction`, `action-items` |
+| **Required** | `pdf-extraction`, `action-items` |
 | **Optional** | `debugging` |
 
 ## Thema 2: Scheduling
@@ -24,7 +24,7 @@ MATRIX = """# Test-Matrix
 
 | Kategorie | Skills |
 |-----------|--------|
-| **Pflicht** | `calendar-sync` |
+| **Required** | `calendar-sync` |
 """
 
 SKILL_PDF = """---
@@ -67,9 +67,9 @@ def env(tmp_path: Path, monkeypatch):
     return tmp_path
 
 
-def test_topic_match_injects_pflicht(env):
+def test_topic_match_injects_required(env):
     out = engine.build_injection(
-        "Plan für den OCR-Bug im PDF-Dokument",
+        "Plan for the OCR bug in the PDF document",
         env / "skills",
         env / "matrix.md",
     )
@@ -80,12 +80,12 @@ def test_topic_match_with_matrix(env):
     matrix = env / "matrix.md"
     matrix.write_text(MATRIX)
     out = engine.build_injection(
-        "Plan für den OCR-Bug im PDF-Dokument",
+        "Plan for the OCR bug in the PDF document",
         env / "skills",
         matrix,
     )
     assert out is not None
-    assert "Dokumente" in out or "Documents" in out
+    assert "Documents" in out
     assert "pdf-extraction" in out
     assert "action-items" in out
 
@@ -114,15 +114,15 @@ def test_topic_change_signature(env):
 def test_learning_associates_task_words(env):
     lexicon = {}
     updated = engine.learn_from_load(
-        "mein handy zeigt fehler", {"injected_skill"}, "device-debugging", lexicon
+        "my phone shows errors", {"injected_skill"}, "device-debugging", lexicon
     )
-    assert "handy" in updated
-    assert updated["handy"] == {"device-debugging": 1}
+    assert "phone" in updated
+    assert updated["phone"] == {"device-debugging": 1}
     # Already-injected skills must NOT be learned
     unchanged = engine.learn_from_load(
-        "mein handy zeigt fehler", {"device-debugging"}, "device-debugging", lexicon
+        "my phone shows errors", {"device-debugging"}, "device-debugging", lexicon
     )
-    assert unchanged["handy"] == {"device-debugging": 1}
+    assert unchanged["phone"] == {"device-debugging": 1}
 
 
 def test_learning_never_stores_task_ids(env):
@@ -133,27 +133,27 @@ def test_learning_never_stores_task_ids(env):
     hash_token = "a1b2c3d4"
     lexicon = {}
     updated = engine.learn_from_load(
-        f"dokument scan mit {task_id} und hash {hash_token}",
+        f"document scan with {task_id} and hash {hash_token}",
         set(),
         "pdf-extraction",
         lexicon,
     )
     assert hash_token not in updated
     assert task_id not in updated
-    # aber die Aufgaben-Keywords schon
-    assert "dokument" in updated or "scan" in updated
+    # but the task keywords are learned
+    assert "document" in updated or "scan" in updated
 
 
 def test_learning_skips_long_messages(env):
-    """Lange Nachrichten sind Kontext, keine Aufgaben-Keywords — nichts lernen."""
-    long_msg = " ".join(f"wort{i}" for i in range(60))
+    """Long messages are context, not task keywords — nothing is learned."""
+    long_msg = " ".join(f"word{i}" for i in range(60))
     lexicon = {}
     updated = engine.learn_from_load(long_msg, set(), "some-skill", lexicon)
     assert updated == {}
 
 
 def test_learning_caps_at_five_words(env):
-    longish = "eins zwei drei vier fünf sechs sieben acht neun zehn probleme"
+    longish = "three four five six seven eight nine ten problems to fix"
     lexicon = {}
     updated = engine.learn_from_load(longish, set(), "some-skill", lexicon)
     assert len(updated) <= 5

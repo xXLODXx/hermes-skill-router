@@ -44,7 +44,8 @@ STOPWORDS = {
     "nochmal", "gerade", "einfach", "vielleicht", "frage", "fragen", "diese",
     "diesen", "dieser", "soll", "sollte", "kannst", "können", "würde", "wird",
     "werden", "wurde", "wieder", "zurück", "darauf", "davor", "dazwischen",
-    # Generika (Lern-Rauschquelle — nie ein Skill-Keyword)
+    # Generic words that create noise as skill search terms
+    # (skill matching only — matrix keywords stay unfiltered).
     "guidance", "preference", "gain", "standalone", "fixture", "below",
     "governs", "claims", "theirs", "against", "protected", "uninstalled",
     "confident", "statically", "modifications", "consolidation", "recommended",
@@ -139,7 +140,7 @@ def parse_matrix(text: str) -> list[dict]:
         if km:
             current["keywords"] = re.findall(r"`([^`]+)`", km.group(1))
             continue
-        if "**Pflicht**" in line:
+        if "**Pflicht**" in line or "**Required**" in line:
             current["pflicht"] = re.findall(r"`([^`]+)`", line)
         elif "**Optional**" in line:
             current["optional"] = re.findall(r"`([^`]+)`", line)
@@ -222,21 +223,21 @@ def _task_words(user_message: str) -> set[str]:
     return words
 
 
-# ── Lern-Härtung (Datenschutz) ───────────────────────────────────────────────
+# ── Learning hardening (privacy) ─────────────────────────────────────────────
 
-_ID_PATTERN = re.compile(r"^[a-z0-9]{8,}$")          # Hashes/IDs (8+ alnum, z. B. t_<id>)
-_TASK_ID_PATTERN = re.compile(r"^t_[a-z0-9]+$")       # Task-IDs (t_<id>)
-MAX_LEARN_WORDS = 5                                   # max. Keywords pro Lern-Ereignis
-MAX_LEARN_MESSAGE_WORDS = 40                          # längere Nachrichten = Kontext, nicht lernen
+_ID_PATTERN = re.compile(r"^[a-z0-9]{8,}$")          # hashes/IDs (8+ alnum, e.g. t_<id>)
+_TASK_ID_PATTERN = re.compile(r"^t_[a-z0-9]+$")       # task IDs (t_<id>)
+MAX_LEARN_WORDS = 5                                   # max keywords per learning event
+MAX_LEARN_MESSAGE_WORDS = 40                          # longer messages = context, not learned
 
 
 def learn_words(user_message: str) -> list[str]:
-    """Aufgaben-Keywords fürs Lernen — in Message-Reihenfolge, gehärtet.
+    """Task keywords for learning — in message order, hardened.
 
-    - Nur aus KURZEN Nachrichten (<= 40 Wörter): lange Nachrichten enthalten
-      Kontext/Erklärungen, keine prägnanten Aufgaben-Keywords.
-    - IDs, Hashes, Task-IDs (t_...) und Pfad-ähnliche Tokens werden nie gelernt.
-    - Maximal 5 Keywords pro Ereignis (die ersten relevanten).
+    - Only from SHORT messages (<= 40 words): long messages carry context
+      or explanations, not concise task keywords.
+    - IDs, hashes, task IDs (t_...) are never learned.
+    - At most 5 keywords per event (the first relevant ones).
     """
     if len(user_message.split()) > MAX_LEARN_MESSAGE_WORDS:
         return []
@@ -301,32 +302,32 @@ def build_injection(
     if not topic_hits and not skill_hits:
         return None
 
-    parts = ["### Skill-Routing (automatisch, aufgabenbasiert)\n"]
+    parts = ["### Skill Routing (automatic, task-based)\n"]
     if topic_hits:
-        parts.append("Erkannte Themen:")
+        parts.append("Matched topics:")
         for score, t in topic_hits:
             parts.append(f"- {t['name']} (Match {score})")
             if t["pflicht"]:
-                parts.append(f"  Pflicht: {', '.join(t['pflicht'])}")
+                parts.append(f"  Required: {', '.join(t['pflicht'])}")
             if t["optional"]:
                 parts.append(f"  Optional: {', '.join(t['optional'])}")
     if skill_hits:
-        parts.append("Passende Skills (nicht in Matrix geroutet):")
+        parts.append("Suggested skills (not routed by matrix):")
         shown = skill_hits[:MAX_EXTRA_SKILLS]
         for score, s in shown:
             tag_str = f" [{', '.join(s['tags'])}]" if s["tags"] else ""
             parts.append(f"- {s['cat']}/{s['name']}{tag_str}")
         rest = len(skill_hits) - len(shown)
         if rest > 0:
-            parts.append(f"- ... und {rest} weitere (Index prüfen)")
-    parts.append("Lade passende Skills mit skill_view(name) und befolge deren Regeln.")
+            parts.append(f"- ... and {rest} more (check the skill index)")
+    parts.append("Load matching skills with skill_view(name) and follow their instructions.")
     return "\n".join(parts)
 
 
 FALLBACK_HINT = (
-    "### Skill-Routing (automatisch)\n"
-    "Kein Themen-Match für diese Aufgabe. Bei komplexen Aufgaben: "
-    "workflow-router laden (Routing-Matrix).\n"
+    "### Skill Routing (automatic)\n"
+    "No topic matched this task. For complex tasks, load the workflow-router "
+    "skill (routing matrix).\n"
 )
 
 
@@ -344,10 +345,10 @@ def match_signature(injection: str | None) -> tuple:
 def learn_from_load(
     user_message: str, injected_skills: set[str], skill_name: str, lexicon: dict
 ) -> dict:
-    """Geladener Skill war nicht in der Injektion -> Aufgaben-Keywords assoziieren.
+    """Associate task keywords with a skill loaded outside the injection.
 
-    Datenschutz-Härtung: nur kurze Nachrichten, max. 5 gehärtete Keywords
-    (keine IDs/Task-IDs), nichts bei bereits injizierten Skills.
+    Privacy hardening: short messages only, max 5 hardened keywords
+    (no IDs/task IDs), nothing for already-injected skills.
     """
     if skill_name in injected_skills or not user_message:
         return lexicon
