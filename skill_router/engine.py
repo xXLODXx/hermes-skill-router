@@ -34,6 +34,19 @@ MIN_COOCCUR = 2              # Minimum-Support: Assoziation zaehlt erst ab 2 Koo
 MIN_CALLS_FOR_LIFT = 25      # ab so vielen Tool-Calls ist der Lift belastbar (vorher zu verrauscht)
 CLUSTER_BONUS = 2            # Cluster-Treffer: +Punkte pro weiterem Wort eines Tool-Clusters (ab 2)
 
+# Kurze Fachbegriffe (3 Buchstaben), die trotz Mindestlaenge 4 erkannt werden
+# sollen — gezielt, damit kein Rausch-Schwall durchrutscht.
+THREE_LETTER_WORDS = frozenset({
+    "ssh", "ocr", "pdf", "tap", "adb", "avd", "ime", "api", "llm",
+    "gpu", "cpu", "ram", "vm", "ui", "dns", "tls", "cli", "sdk",
+})
+
+# Woerter >= 4 Zeichen ODER Whitelist-3er als ganze Woerter (Reihenfolge erhalten).
+_WORD_PATTERN = re.compile(
+    r"[a-zäöüß0-9]{4,}"
+    r"|(?<![a-z0-9])(?:" + "|".join(re.escape(w) for w in sorted(THREE_LETTER_WORDS)) + r")(?![a-z0-9])"
+)
+
 STOPWORDS = {
     "task", "tasks", "plan", "app", "apps", "tool", "tools", "skill", "skills",
     "use", "using", "used", "the", "and", "for", "with", "von", "und", "für",
@@ -336,7 +349,8 @@ def _phrase_hits(text: str, keywords: list[str]) -> int:
 def _task_words(user_message: str) -> set[str]:
     """Relevante Wörter der Aufgabe (für Matching)."""
     words = set()
-    for w in re.findall(r"[a-zäöüß0-9]{4,}", user_message.lower()):
+    for m in _WORD_PATTERN.finditer(user_message.lower()):
+        w = m.group(0)
         if w not in STOPWORDS and re.search(r"[a-zäöüß]", w):
             words.add(w)
     return words
@@ -363,7 +377,8 @@ def learn_words(user_message: str, lexicon: dict | None = None) -> list[str]:
     if len(user_message.split()) > MAX_LEARN_MESSAGE_WORDS:
         return []
     result: list[str] = []
-    for w in re.findall(r"[a-zäöüß0-9]{4,}", user_message.lower()):
+    for m in _WORD_PATTERN.finditer(user_message.lower()):
+        w = m.group(0)
         if w in STOPWORDS or not re.search(r"[a-zäöüß]", w):
             continue
         if _ID_PATTERN.match(w) or _TASK_ID_PATTERN.match(w):

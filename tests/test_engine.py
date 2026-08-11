@@ -69,11 +69,11 @@ def env(tmp_path: Path, monkeypatch):
 
 def test_topic_match_injects_required(env):
     out = engine.build_injection(
-        "Plan for the OCR bug in the PDF document",
+        "write the weekly status report",
         env / "skills",
         env / "matrix.md",
     )
-    assert out is None  # matrix file does not exist yet -> no topics
+    assert out is None  # matrix file does not exist yet, keine Tag-Treffer
 
 
 def test_topic_match_with_matrix(env):
@@ -348,6 +348,44 @@ def test_learn_words_skips_generic_entries():
     words = engine.learn_words("phone document issue", generic)
     assert "phone" not in words  # generisch — nicht mehr lernen
     assert "document" in words
+
+
+def test_learn_words_three_letter_whitelist():
+    """Fachbegriffe mit 3 Buchstaben (ssh, adb, ...) werden trotz
+    Mindestlänge 4 erkannt — gezielt über die Whitelist."""
+    words = engine.learn_words("ssh verbinden windows adb testen")
+    assert "ssh" in words
+    assert "adb" in words
+    assert "windows" in words
+
+
+def test_learn_words_three_letter_noise_filtered():
+    """Nicht-Whitelist-3er (sie, mit, wie) werden weiterhin ignoriert."""
+    words = engine.learn_words("sie und mit wie")
+    assert not any(len(w) == 3 for w in words)
+
+
+def test_task_words_three_letter_matches(env):
+    """3-Buchstaben-Whitelist-Wörter zählen beim Matching (ssh -> Skill)."""
+    (env / "skills" / "autonomous-ai-agents" / "windows-ssh-remote").mkdir(parents=True)
+    (env / "skills" / "autonomous-ai-agents" / "windows-ssh-remote" / "SKILL.md").write_text(
+        "---\n"
+        "name: windows-ssh-remote\n"
+        "description: \"Drive a Windows PC remotely over SSH.\"\n"
+        "metadata:\n"
+        "  hermes:\n"
+        "    tags: [SSH, Windows, Remote]\n"
+        "---\n"
+    )
+    stats = {
+        "total_calls": 100,
+        "words": {"ssh": 10},
+        "tools": {"windows-ssh-remote": 20},
+    }
+    lexicon = {"ssh": {"windows-ssh-remote": 5}}
+    out = engine.build_injection("ssh verbinden", env / "skills", None, lexicon, stats)
+    assert out is not None
+    assert "windows-ssh-remote" in out
 
 
 def test_lexicon_roundtrip(tmp_path: Path):
