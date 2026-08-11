@@ -171,9 +171,13 @@ def record_tool_call(
     target = tool_name
     if tool_name in ("skill_view", "view_skill", "skills_view"):
         target = (args or {}).get("name") or tool_name
-    stats.setdefault("tools", {})[target] = stats["tools"].get(target, 0) + 1
+    # Achtung: RHS wird vor dem setdefault ausgewertet — nie
+    # `stats.setdefault(...)[k] = stats[k]...` (KeyError bei leerem stats).
+    tools = stats.setdefault("tools", {})
+    tools[target] = tools.get(target, 0) + 1
     for w in learn_words(user_message, lexicon):
-        stats.setdefault("words", {})[w] = stats["words"].get(w, 0) + 1
+        words = stats.setdefault("words", {})
+        words[w] = words.get(w, 0) + 1
         entry = lexicon.setdefault(w, {})
         entry[target] = entry.get(target, 0) + 1
     return lexicon, stats

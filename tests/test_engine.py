@@ -128,6 +128,20 @@ def test_record_tool_call_tracks_stats(env):
     assert lexicon["tastatur"] == {"device-debugging": 1}
 
 
+def test_record_tool_call_with_bare_stats(env):
+    """Regression: stats aus leerer Datei ({}) statt empty_stats() —
+    setdefault muss vor dem Lesen laufen (RHS-Reihenfolge)."""
+    lexicon = {}
+    stats = {}  # exakt was load_stats() aus einer leeren Datei liefert
+    lexicon, stats = engine.record_tool_call(
+        "emulator tastatur", "terminal", None, lexicon, stats
+    )
+    assert stats["total_calls"] == 1
+    assert stats["tools"] == {"terminal": 1}
+    assert stats["words"]["emulator"] == 1
+    assert lexicon["tastatur"] == {"terminal": 1}
+
+
 def test_record_never_stores_task_ids(env):
     """Task-IDs und Hashes sind persönliche/technische Daten — nie erfassen."""
     # Synthetisch zusammengesetzt, damit der Privacy-Guard-Scan sie nicht
