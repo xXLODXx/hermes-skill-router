@@ -115,11 +115,10 @@
         "Noch keine Kandidaten — nach etwas Tool-Nutzung erscheint hier die Entscheidungs-Mindmap (Task → Skills mit Pro/Contra).");
     }
 
-    const W = 960, H = 640, cx = W / 2, cy = H / 2;
+    const W = 1100, H = 760, cx = W / 2, cy = H / 2;
     const n = cands.length;
-    const kR = 150;   // Kandidaten-Ring
-    const pR = 205;   // Pro/Contra-Ring
-    const iconR = 80; // Status-Icon-Ring
+    const kR = 195;   // Kandidaten-Ring
+    const iconR = 85; // Status-Icon-Ring
 
     const items = cands.map(function (c, i) {
       const a = (i / n) * 2 * Math.PI - Math.PI / 2;
@@ -180,15 +179,17 @@
         h("text", { x: it.kx, y: it.ky + 4, textAnchor: "middle", className: "sr-mtext-alt" }, it.label)
       ));
 
-      // Pro/Contra seitlich am Kandidaten
-      const perp = it.a + Math.PI / 2;
+      // Pro/Contra entlang der Radialrichtung: nach aussen vom Kandidaten,
+      // leicht seitlich versetzt (Pro +Winkel, Contra -Winkel), gestaffelt.
+      // So bleibt jeder Knoten in seinem 60°-Sektor — keine Überlappungen.
       let pi = 0, ci = 0;
       it.cand.pro.forEach(function (p) {
-        const px = it.kx + (pi + 1) * 44 * Math.cos(perp);
-        const py = it.ky + (pi + 1) * 44 * Math.sin(perp);
-        const txt = "Pro: " + truncate(p.word, 14) + " " + p.count + "× · " + p.lift;
+        const ra = it.a + 0.24;
+        const rr = kR + 34 + pi * 36;
+        const px = cx + rr * Math.cos(ra), py = cy + rr * Math.sin(ra);
+        const txt = truncate(p.word, 12) + " " + p.count + "× · " + p.lift;
         const w = txt.length * 5.6 + 14;
-        nodes.push(h("path", { key: "lp" + it.i + pi, d: curve(it.kx, it.ky, px, py, 10), className: "sr-mline-sub" }));
+        nodes.push(h("path", { key: "lp" + it.i + pi, d: curve(it.kx, it.ky, px, py, 6), className: "sr-mline-sub" }));
         nodes.push(h("g", { key: "p" + it.i + pi },
           h("rect", { x: px - w / 2, y: py - 11, width: w, height: 22, rx: 6, className: "sr-mnode-sub sr-mnode-pro" }),
           h("text", { x: px, y: py + 3.5, textAnchor: "middle", className: "sr-mtext-sub sr-mtext-pro" }, txt)
@@ -196,11 +197,12 @@
         pi++;
       });
       it.cand.contra.forEach(function (c) {
-        const px = it.kx - (ci + 1) * 44 * Math.cos(perp);
-        const py = it.ky - (ci + 1) * 44 * Math.sin(perp);
-        const txt = "Contra: " + truncate(c.word, 14) + " " + c.count + "×";
+        const ra = it.a - 0.24;
+        const rr = kR + 34 + ci * 36;
+        const px = cx + rr * Math.cos(ra), py = cy + rr * Math.sin(ra);
+        const txt = truncate(c.word, 12) + " " + c.count + "×";
         const w = txt.length * 5.6 + 14;
-        nodes.push(h("path", { key: "lc" + it.i + ci, d: curve(it.kx, it.ky, px, py, 10), className: "sr-mline-sub" }));
+        nodes.push(h("path", { key: "lc" + it.i + ci, d: curve(it.kx, it.ky, px, py, 6), className: "sr-mline-sub" }));
         nodes.push(h("g", { key: "c" + it.i + ci },
           h("rect", { x: px - w / 2, y: py - 11, width: w, height: 22, rx: 6, className: "sr-mnode-sub sr-mnode-contra" }),
           h("text", { x: px, y: py + 3.5, textAnchor: "middle", className: "sr-mtext-sub sr-mtext-contra" }, txt)
