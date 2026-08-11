@@ -1,0 +1,14 @@
+{
+  "name": "workflow-router-autoload",
+  "label": "Skill Router",
+  "description": "Skill-Routing-Statistik: Wort→Tool-Kookkurrenz, Lift-Gewichtung, Lexikon-Zustand und Selbstreinigung.",
+  "icon": "GitBranch",
+  "version": "1.1.0",
+  "tab": {
+    "path": "/skill-router",
+    "position": "end"
+  },
+  "entry": "dist/index.js",
+  "css": "dist/style.css",
+  "api": "plugin_api.py"
+}
