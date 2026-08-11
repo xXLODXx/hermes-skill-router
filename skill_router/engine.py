@@ -336,7 +336,7 @@ def match_signature(injection: str | None) -> tuple:
     if not injection:
         return ()
     topics = tuple(sorted(re.findall(r"^- ([A-Za-zäöüÄÖÜ0-9 /-]+?) \(Match", injection, re.M)))
-    skills = tuple(sorted(re.findall(r"-\s+(?:Pflicht|Optional): ([^\n]+)", injection)))
+    skills = tuple(sorted(re.findall(r"-\s+(?:Pflicht|Required|Optional): ([^\n]+)", injection)))
     return topics + skills
 
 
