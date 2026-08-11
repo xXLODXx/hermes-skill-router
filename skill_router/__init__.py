@@ -22,16 +22,18 @@ from . import engine
 
 _PLUGIN_DIR = Path(__file__).resolve().parent
 _LEXICON_PATH = _PLUGIN_DIR / "data" / "learned_keywords.json"
-_MAX_LEARN_EVENTS_PER_SESSION = 1  # nur erstes Lern-Event pro Session (Massen-Events vermeiden)
+_STATS_PATH = _PLUGIN_DIR / "data" / "tool_stats.json"
 
 _session_ctx: dict = {"current": None, "last_match": (), "fallback_shown": False}
-_learn_counts: dict[str, int] = {}  # session_id -> Lern-Events (Massen-Events-Bremse)
 
 
 def register(ctx):
     """Plugin entry point: wires the injection and learning hooks."""
 
     def inject(user_message: str, session_id: str, **kwargs):
+        # Immer die aktuelle Message merken — die Entscheidungsphase, die das
+        # Tool-Tracking (pre_tool_call) den Tool-Starts zuordnet.
+        _session_ctx["current"] = {"message": user_message or "", "injected": set()}
         matrix = engine.default_matrix_path()
         try:
             injection = engine.build_injection(
@@ -39,6 +41,7 @@ def register(ctx):
                 engine.hermes_home() / "skills",
                 matrix,
                 engine.load_lexicon(_LEXICON_PATH),
+                engine.load_stats(_STATS_PATH),
             )
         except OSError:
             injection = None
@@ -68,21 +71,25 @@ def register(ctx):
         }
         return {"context": injection}
 
-    def learn(skill_name: str, action: str, session_id: str, **kwargs):
-        if action != "loaded":
-            return
-        if _learn_counts.get(session_id, 0) >= _MAX_LEARN_EVENTS_PER_SESSION:
-            return  # nur das erste Lern-Event pro Session
+    def on_tool(tool_name: str, session_id: str, **kwargs):
+        """Jeden Tool-Start erfassen: Wörter der Entscheidungsphase (aktuelle
+        User-Message) als Kookkurrenz — Grundlage für Lift-Gewichtung und
+        nutzungsbasierte Bereinigung. Observer: blockt nie."""
         ctx_ = _session_ctx.get("current")
-        if not ctx_:
-            return
+        if not ctx_ or not tool_name:
+            return None
+        message = ctx_.get("message", "")
+        if not message:
+            return None
         lexicon = engine.load_lexicon(_LEXICON_PATH)
-        updated = engine.learn_from_load(
-            ctx_["message"], ctx_["injected"], skill_name, lexicon
+        stats = engine.load_stats(_STATS_PATH)
+        lexicon, stats = engine.record_tool_call(
+            message, tool_name, kwargs.get("args"), lexicon, stats
         )
-        if updated != lexicon:
-            engine.save_lexicon(updated, _LEXICON_PATH)
-            _learn_counts[session_id] = _learn_counts.get(session_id, 0) + 1
+        lexicon = engine.prune_lexicon(lexicon, stats)
+        engine.save_lexicon(lexicon, _LEXICON_PATH)
+        engine.save_stats(stats, _STATS_PATH)
+        return None
 
     ctx.register_hook("pre_llm_call", inject)
-    ctx.register_hook("on_skill_lifecycle", learn)
+    ctx.register_hook("pre_tool_call", on_tool)

@@ -29,6 +29,9 @@ DEFAULT_MATRIX_REL: Path | None = None
 MAX_EXTRA_SKILLS = 15
 LEXICON_CAP = 400
 GENERIC_SKILL_THRESHOLD = 5  # Wort mit >=5 Skill-Assoziationen = generisch: nicht lernen, nicht gewichten
+LIFT_THRESHOLD = 2.0         # Kausalitäts-Gate: Kookkurrenz >= 2x ueber Zufallserwartung
+MIN_COOCCUR = 2              # Minimum-Support: Assoziation zaehlt erst ab 2 Kookkurrenzen
+MIN_CALLS_FOR_LIFT = 25      # ab so vielen Tool-Calls ist der Lift belastbar (vorher zu verrauscht)
 
 STOPWORDS = {
     "task", "tasks", "plan", "app", "apps", "tool", "tools", "skill", "skills",
@@ -125,6 +128,84 @@ def save_lexicon(lexicon: dict, path: Path) -> None:
         tmp.replace(path)
     except OSError:
         pass
+
+
+# ── Nutzungs-Statistik (Kausalitaets-Basis) ─────────────────────────────────
+
+def empty_stats() -> dict:
+    """{total_calls, words, tools} — Marginalien fuer die Lift-Berechnung."""
+    return {"total_calls": 0, "words": {}, "tools": {}}
+
+
+def load_stats(path: Path) -> dict:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(data, dict):
+            return data
+    except (OSError, json.JSONDecodeError):
+        pass
+    return empty_stats()
+
+
+def save_stats(stats: dict, path: Path) -> None:
+    try:
+        tmp = path.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(stats, ensure_ascii=False, indent=1), encoding="utf-8")
+        tmp.replace(path)
+    except OSError:
+        pass
+
+
+def record_tool_call(
+    user_message: str,
+    tool_name: str,
+    args: dict | None,
+    lexicon: dict,
+    stats: dict,
+) -> tuple[dict, dict]:
+    """Tool-Start erfassen: Woerter der Entscheidungsphase (User-Message) mit dem
+    gestarteten Tool assoziieren (Kookkurrenz). skill_view-Calls werden auf den
+    Skill-Namen gemappt, damit das Matching-Ziel (Skill) getroffen wird."""
+    stats["total_calls"] = stats.get("total_calls", 0) + 1
+    target = tool_name
+    if tool_name in ("skill_view", "view_skill", "skills_view"):
+        target = (args or {}).get("name") or tool_name
+    stats.setdefault("tools", {})[target] = stats["tools"].get(target, 0) + 1
+    for w in learn_words(user_message, lexicon):
+        stats.setdefault("words", {})[w] = stats["words"].get(w, 0) + 1
+        entry = lexicon.setdefault(w, {})
+        entry[target] = entry.get(target, 0) + 1
+    return lexicon, stats
+
+
+def lift(word: str, tool: str, lexicon: dict, stats: dict) -> float:
+    """Kausalitaets-Mass: beobachtete Kookkurrenz / Zufallserwartung.
+    ~1.0 = zufaellig (generisches Wort), deutlich >1 = spezifische Assoziation."""
+    total = max(stats.get("total_calls", 0), 1)
+    wc = stats.get("words", {}).get(word, 0)
+    tc = stats.get("tools", {}).get(tool, 0)
+    co = lexicon.get(word, {}).get(tool, 0)
+    if co == 0 or wc == 0 or tc == 0:
+        return 0.0
+    expected = wc * tc / total
+    return co / expected if expected > 0 else 0.0
+
+
+def prune_lexicon(lexicon: dict, stats: dict) -> dict:
+    """Nutzungsbasierte Bereinigung: Woerter ohne kausale Assoziation zu IRGENDEINEM
+    Tool (bestes Lift < LIFT_THRESHOLD mit Minimum-Support) entfernen.
+    Erst ab MIN_CALLS_FOR_LIFT — vorher ist der Lift zu verrauscht."""
+    if stats.get("total_calls", 0) < MIN_CALLS_FOR_LIFT:
+        return lexicon
+    keep = {}
+    for w, tools in lexicon.items():
+        best = max(
+            (lift(w, t, lexicon, stats) for t, c in tools.items() if c >= MIN_COOCCUR),
+            default=0.0,
+        )
+        if best >= LIFT_THRESHOLD:
+            keep[w] = tools
+    return keep
 
 
 # ── Matrix parsen (optional) ─────────────────────────────────────────────────
@@ -270,6 +351,7 @@ def build_injection(
     skills_dir: Path,
     matrix_path: Path | None = None,
     lexicon: dict | None = None,
+    stats: dict | None = None,
 ) -> str | None:
     """Injektion bauen: erkannte Matrix-Themen + passende Skills.
 
@@ -308,7 +390,13 @@ def build_injection(
         for w in words & set(lexicon):
             if len(lexicon[w]) >= GENERIC_SKILL_THRESHOLD:
                 continue  # generisches Wort — kein Gewicht
-            score += lexicon[w].get(s["name"], 0)
+            count = lexicon[w].get(s["name"], 0)
+            if count == 0:
+                continue
+            if stats and stats.get("total_calls", 0) >= MIN_CALLS_FOR_LIFT:
+                if count < MIN_COOCCUR or lift(w, s["name"], lexicon, stats) < LIFT_THRESHOLD:
+                    continue  # Frequenz ohne Kausalitaet zaehlt nicht
+            score += count
         if score > 0:
             skill_hits.append((score, s))
     skill_hits.sort(key=lambda x: (-x[0], x[1]["name"]))
@@ -354,21 +442,7 @@ def match_signature(injection: str | None) -> tuple:
     return topics + skills
 
 
-# ── Lernen aus Skill-Loads ───────────────────────────────────────────────────
-
-def learn_from_load(
-    user_message: str, injected_skills: set[str], skill_name: str, lexicon: dict
-) -> dict:
-    """Associate task keywords with a skill loaded outside the injection.
-
-    Privacy hardening: short messages only, max 5 hardened keywords
-    (no IDs/task IDs), nothing for already-injected skills.
-    """
-    if skill_name in injected_skills or not user_message:
-        return lexicon
-    changed = False
-    for w in learn_words(user_message, lexicon):
-        entry = lexicon.setdefault(w, {})
-        entry[skill_name] = entry.get(skill_name, 0) + 1
-        changed = True
-    return lexicon
+# ── Lernen aus Tool-Nutzung ──────────────────────────────────────────────────
+# `record_tool_call` (oben) ersetzt das fruehere Skill-Load-Lernen: Jeder
+# Tool-Start (inkl. skill_view) erfasst die Woerter der Entscheidungsphase
+# als Kookkurrenz — der Lift filtert generische Woerter (Kausalitaet).

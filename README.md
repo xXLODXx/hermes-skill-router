@@ -31,10 +31,16 @@ This plugin closes that gap with three mechanisms:
 2. **Topic-change detection** — a compact match signature is kept per session;
    the injection repeats only when the topic actually changes (token-saving).
    No match → a single short fallback hint per session.
-3. **Self-learning** — when the model loads a skill that was *not* part of the
-   injection (`on_skill_lifecycle` hook), the task's keywords are persistently
-   associated with that skill. Next time, the skill is suggested automatically.
-   The matcher grows with your real usage patterns — no manual maintenance.
+3. **Usage learning** — every tool start (`pre_tool_call`) associates the
+   current task's keywords with the tool that was actually used (skill_view
+   calls map to the loaded skill). The matcher grows with your real usage
+   patterns — no manual maintenance.
+4. **Causal weighting & self-cleaning** — raw co-occurrence counts are gated by
+   a lift measure (observed / expected-by-chance). Words that appear before
+   every tool (e.g. "bitte", "schnell") get lift ~1 and weight nothing; words
+   that reliably precede one tool (e.g. "emulator" → adb tools) get weight.
+   The lexicon is pruned on every save: entries without any causal association
+   are removed. Marginal counts live in `tool_stats.json`.
 
 Typical cost: **70–200 tokens per injection**, 0 tokens for follow-ups on the
 same topic.
@@ -96,8 +102,9 @@ auto-suggested section.
 
 ## Privacy
 
-- The learned-association file (`learned_keywords.json`) is stored **locally** in
-  the plugin directory and is **never transmitted anywhere**.
+- The learned-association files (`learned_keywords.json`, `tool_stats.json`)
+  are stored **locally** in the plugin directory and are **never transmitted
+  anywhere**.
 - It may contain keywords extracted from your own task messages; delete the file
   at any time to reset the learned associations.
 - The plugin performs **no telemetry and no network calls**.

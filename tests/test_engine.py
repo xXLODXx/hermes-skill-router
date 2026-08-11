@@ -111,52 +111,123 @@ def test_topic_change_signature(env):
     assert engine.match_signature(a) == engine.match_signature(a)
 
 
-def test_learning_associates_task_words(env):
-    lexicon = {}
-    updated = engine.learn_from_load(
-        "my phone shows errors", {"injected_skill"}, "device-debugging", lexicon
+def test_record_tool_call_tracks_stats(env):
+    """Tool-Start erfasst Entscheidungsphasen-Wörter als Kookkurrenz.
+    skill_view-Calls werden auf den Skill-Namen gemappt."""
+    lexicon, stats = {}, engine.empty_stats()
+    lexicon, stats = engine.record_tool_call(
+        "emulator tastatur pruefen",
+        "skill_view",
+        {"name": "device-debugging"},
+        lexicon,
+        stats,
     )
-    assert "phone" in updated
-    assert updated["phone"] == {"device-debugging": 1}
-    # Already-injected skills must NOT be learned
-    unchanged = engine.learn_from_load(
-        "my phone shows errors", {"device-debugging"}, "device-debugging", lexicon
-    )
-    assert unchanged["phone"] == {"device-debugging": 1}
+    assert stats["total_calls"] == 1
+    assert stats["tools"]["device-debugging"] == 1  # gemappt, nicht "skill_view"
+    assert stats["words"]["tastatur"] == 1
+    assert lexicon["tastatur"] == {"device-debugging": 1}
 
 
-def test_learning_never_stores_task_ids(env):
-    """Task-IDs und Hashes sind persönliche/technische Daten — nie lernen."""
+def test_record_never_stores_task_ids(env):
+    """Task-IDs und Hashes sind persönliche/technische Daten — nie erfassen."""
     # Synthetisch zusammengesetzt, damit der Privacy-Guard-Scan sie nicht
     # als statisches Muster im Quelltext findet (echte IDs gehören nicht ins Repo).
     task_id = "t_" + "a1b2c3d4"
     hash_token = "a1b2c3d4"
-    lexicon = {}
-    updated = engine.learn_from_load(
+    lexicon, stats = {}, engine.empty_stats()
+    lexicon, stats = engine.record_tool_call(
         f"document scan with {task_id} and hash {hash_token}",
-        set(),
-        "pdf-extraction",
+        "skill_view",
+        {"name": "pdf-extraction"},
         lexicon,
+        stats,
     )
-    assert hash_token not in updated
-    assert task_id not in updated
-    # but the task keywords are learned
-    assert "document" in updated or "scan" in updated
+    assert hash_token not in lexicon and hash_token not in stats["words"]
+    assert task_id not in lexicon and task_id not in stats["words"]
+    # but the task keywords are captured
+    assert "document" in lexicon or "scan" in lexicon
 
 
-def test_learning_skips_long_messages(env):
-    """Long messages are context, not task keywords — nothing is learned."""
+def test_record_skips_long_messages(env):
+    """Long messages are context, not task keywords — nothing is captured."""
     long_msg = " ".join(f"word{i}" for i in range(60))
-    lexicon = {}
-    updated = engine.learn_from_load(long_msg, set(), "some-skill", lexicon)
-    assert updated == {}
+    lexicon, stats = {}, engine.empty_stats()
+    lexicon, stats = engine.record_tool_call(
+        long_msg, "terminal", None, lexicon, stats
+    )
+    assert lexicon == {}
+    assert stats["words"] == {}
+    assert stats["total_calls"] == 1  # der Call selbst zählt immer
 
 
-def test_learning_caps_at_five_words(env):
+def test_record_caps_at_five_words(env):
     longish = "three four five six seven eight nine ten problems to fix"
-    lexicon = {}
-    updated = engine.learn_from_load(longish, set(), "some-skill", lexicon)
-    assert len(updated) <= 5
+    lexicon, stats = {}, engine.empty_stats()
+    lexicon, stats = engine.record_tool_call(
+        longish, "terminal", None, lexicon, stats
+    )
+    assert len(lexicon) <= 5
+
+
+def test_lift_specific_vs_generic():
+    """Generische Wörter (gleichmäßig über alle Tools) haben Lift ~1,
+    spezifische Wörter (konzentriert auf ein Tool) deutlich >1."""
+    stats = {
+        "total_calls": 100,
+        "words": {"bitte": 80, "emulator": 10},
+        "tools": {"calendar-sync": 40, "adb": 30},
+    }
+    lexicon = {
+        "bitte": {"calendar-sync": 30, "adb": 30},
+        "emulator": {"adb": 9, "calendar-sync": 1},
+    }
+    # erwartet: 80*40/100 = 32 -> lift 30/32 = 0.94  (Zufall)
+    assert engine.lift("bitte", "calendar-sync", lexicon, stats) < 2.0
+    # erwartet: 10*30/100 = 3 -> lift 9/3 = 3.0  (kausal)
+    assert engine.lift("emulator", "adb", lexicon, stats) >= 2.0
+    # 1x-Kookkurrenz ist kein belegtes Signal
+    assert engine.lift("emulator", "calendar-sync", lexicon, stats) < 2.0
+
+
+def test_matching_gate_ignores_generic_words(env):
+    """Hohe Frequenz ohne Kausalität gewichtet nichts; spezifische Wörter schon."""
+    stats = {
+        "total_calls": 100,
+        "words": {"schnell": 80, "emulator": 10},
+        "tools": {"calendar-sync": 40},
+    }
+    generic = {"schnell": {"calendar-sync": 30}}
+    out = engine.build_injection("schnell", env / "skills", None, generic, stats)
+    assert out is None  # Frequenz ohne Kausalität -> kein Vorschlag
+
+    specific = {"emulator": {"calendar-sync": 9}}
+    out = engine.build_injection("emulator", env / "skills", None, specific, stats)
+    assert out is not None
+    assert "calendar-sync" in out
+
+    # Ohne Stats (wenig Daten) zählt der alte Weg — Kompatibilität
+    out = engine.build_injection("schnell", env / "skills", None, generic)
+    assert out is not None
+
+
+def test_prune_removes_non_causal_words():
+    """Nutzungsbasierte Bereinigung: Wörter ohne kausale Assoziation fliegen raus."""
+    stats = {
+        "total_calls": 100,
+        "words": {"bitte": 80, "emulator": 10},
+        "tools": {"calendar-sync": 40, "adb": 30},
+    }
+    lexicon = {
+        "bitte": {"calendar-sync": 30, "adb": 30},  # Lift ~1 überall -> Rauschen
+        "emulator": {"adb": 9},                     # Lift 3.0 -> echtes Signal
+    }
+    pruned = engine.prune_lexicon(lexicon, stats)
+    assert "bitte" not in pruned
+    assert "emulator" in pruned
+
+    # Zu wenig Daten: keine Bereinigung (Lift zu verrauscht)
+    small = dict(stats, total_calls=10)
+    assert engine.prune_lexicon(lexicon, small) == lexicon
 
 
 def test_generic_lexicon_word_not_weighted(env):
