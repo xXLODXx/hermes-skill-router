@@ -201,6 +201,19 @@ def test_lexicon_roundtrip(tmp_path: Path):
     assert engine.load_lexicon(path) == lex
 
 
+def test_save_lexicon_prunes_generic(tmp_path: Path):
+    """Selbstreinigung: Einträge mit >=5 Skill-Assoziationen werden beim Speichern entfernt."""
+    path = tmp_path / "learned_keywords.json"
+    lex = {
+        "good": {"skill-a": 2},
+        "generic": {f"skill-{i}": 1 for i in range(5)},
+    }
+    engine.save_lexicon(lex, path)
+    saved = engine.load_lexicon(path)
+    assert "generic" not in saved  # generisch — physisch entfernt
+    assert "good" in saved
+
+
 def test_fallback_hint_is_short():
     assert len(engine.FALLBACK_HINT) < 200
 

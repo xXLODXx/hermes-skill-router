@@ -108,7 +108,12 @@ def load_lexicon(path: Path) -> dict:
 
 
 def save_lexicon(lexicon: dict, path: Path) -> None:
-    """Lexikon atomar persistieren; bei Cap die schwächsten Einträge entfernen."""
+    """Lexikon atomar persistieren; Selbstreinigung: generische Einträge
+    (>= GENERIC_SKILL_THRESHOLD verschiedene Skills) entfernen, bei Cap die
+    schwächsten Einträge trimmen."""
+    lexicon = {
+        w: v for w, v in lexicon.items() if len(v) < GENERIC_SKILL_THRESHOLD
+    }
     if len(lexicon) > LEXICON_CAP:
         ranked = sorted(
             lexicon.items(), key=lambda kv: sum(kv[1].values()), reverse=True
