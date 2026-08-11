@@ -32,6 +32,7 @@ GENERIC_SKILL_THRESHOLD = 5  # Wort mit >=5 Skill-Assoziationen = generisch: nic
 LIFT_THRESHOLD = 2.0         # Kausalitäts-Gate: Kookkurrenz >= 2x ueber Zufallserwartung
 MIN_COOCCUR = 2              # Minimum-Support: Assoziation zaehlt erst ab 2 Kookkurrenzen
 MIN_CALLS_FOR_LIFT = 25      # ab so vielen Tool-Calls ist der Lift belastbar (vorher zu verrauscht)
+CLUSTER_BONUS = 2            # Cluster-Treffer: +Punkte pro weiterem Wort eines Tool-Clusters (ab 2)
 
 STOPWORDS = {
     "task", "tasks", "plan", "app", "apps", "tool", "tools", "skill", "skills",
@@ -206,6 +207,28 @@ def prune_lexicon(lexicon: dict, stats: dict) -> dict:
         if best >= LIFT_THRESHOLD:
             keep[w] = tools
     return keep
+
+
+def cluster_words(tool: str, lexicon: dict, stats: dict) -> set[str]:
+    """Wort-Cluster eines Tools: Woerter mit kausaler Assoziation (Lift + Support).
+    Das ist die Mindmap-Struktur: Ein Tool buendelt die Woerter, die es
+    zuverlaessig vorhersagen."""
+    return {
+        w for w, assoc in lexicon.items()
+        if assoc.get(tool, 0) >= MIN_COOCCUR
+        and lift(w, tool, lexicon, stats) >= LIFT_THRESHOLD
+    }
+
+
+def cluster_bonus(words: set[str], tool: str, lexicon: dict, stats: dict) -> int:
+    """Cluster-Treffer-Bonus: ab 2 Woertern eines Tool-Clusters in der Task
+    +CLUSTER_BONUS je weiterem Treffer — kohaerentes Signal wiegt mehr als
+    die Summe der Einzelcounts (Mindmap-Idee: zusammengehoerige Woerter
+    verstaerken sich)."""
+    hits = len(cluster_words(tool, lexicon, stats) & words)
+    if hits >= 2:
+        return (hits - 1) * CLUSTER_BONUS
+    return 0
 
 
 # ── Matrix parsen (optional) ─────────────────────────────────────────────────
@@ -397,6 +420,8 @@ def build_injection(
                 if count < MIN_COOCCUR or lift(w, s["name"], lexicon, stats) < LIFT_THRESHOLD:
                     continue  # Frequenz ohne Kausalitaet zaehlt nicht
             score += count
+        if stats and stats.get("total_calls", 0) >= MIN_CALLS_FOR_LIFT:
+            score += cluster_bonus(words, s["name"], lexicon, stats)
         if score > 0:
             skill_hits.append((score, s))
     skill_hits.sort(key=lambda x: (-x[0], x[1]["name"]))

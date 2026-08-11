@@ -98,53 +98,65 @@ def overview() -> dict:
     }
 
 
-@router.get("/graph")
-def graph() -> dict:
-    """Mindmap-Daten: bipartiter Graph Wort <-> Tool mit Gewichten.
+@router.get("/decision")
+def decision() -> dict:
+    """Entscheidungs-Mindmap: Task -> Skill-Kandidaten mit Pro/Contra.
 
-    Für die Visualisierung: Knoten (Tools + Wörter) und Kanten
-    (Kookkurrenz), gewichtet und gefiltert auf das kausale Rückgrat.
+    Zeigt die Funktionsweise des Kausalitäts-Matchings: Welche Skills sind
+    Kandidaten, welche Wörter sprechen dafür (Pro = kausal, Lift >= Schwelle)
+    und welche dagegen (Contra = Kookkurrenz ohne Kausalität, wird bereinigt).
     """
     lexicon = _load_json(_LEXICON_PATH)
     stats = _load_json(_STATS_PATH)
     total_calls = stats.get("total_calls", 0)
 
-    tool_nodes = {}
-    word_nodes = {}
-    edges = []
+    tool_counts: dict = {}
     for w, assoc in lexicon.items():
         for t, co in assoc.items():
+            tool_counts[t] = tool_counts.get(t, 0) + co
+
+    candidates = []
+    generic_words = 0
+    for t in sorted(tool_counts, key=lambda t: -tool_counts[t])[:6]:
+        pro, contra = [], []
+        for w, assoc in lexicon.items():
+            co = assoc.get(t, 0)
+            if co == 0:
+                continue
             lv = _lift(w, t, lexicon, stats)
-            causal = (
+            item = {"word": w, "count": co, "lift": round(lv, 2)}
+            if co >= _MIN_COOCCUR and lv >= _LIFT_THRESHOLD:
+                pro.append(item)
+            else:
+                contra.append(item)  # 1x-Zufall oder unter der Lift-Schwelle
+            if (
                 total_calls >= _MIN_CALLS_FOR_LIFT
                 and co >= _MIN_COOCCUR
-                and lv >= _LIFT_THRESHOLD
-            )
-            if co < 2 and not causal:
-                continue  # Rauschen nicht zeichnen
-            tool_nodes.setdefault(t, {"count": stats.get("tools", {}).get(t, 0)})
-            word_nodes.setdefault(w, {})
-            edges.append({
-                "word": w,
-                "tool": t,
-                "count": co,
-                "lift": round(lv, 2),
-                "causal": causal,
-            })
+                and lv < _LIFT_THRESHOLD
+            ):
+                generic_words += 1
+        pro.sort(key=lambda i: -i["lift"])
+        contra.sort(key=lambda i: -i["count"])
 
-    tools = sorted(
-        tool_nodes, key=lambda t: -tool_nodes[t]["count"]
-    )[:12]
-    words = sorted(
-        word_nodes, key=lambda w: -max(
-            e["count"] for e in edges if e["word"] == w
-        )
-    )[:40]
+        if total_calls < _MIN_CALLS_FOR_LIFT:
+            status = "beobachtet"  # zu wenige Daten — Lift noch nicht belastbar
+        elif pro:
+            status = "kausal"
+        elif contra:
+            status = "generisch"  # Kookkurrenz ohne Kausalität -> bereinigt
+        else:
+            status = "beobachtet"
+
+        candidates.append({
+            "tool": t,
+            "count": tool_counts[t],
+            "status": status,
+            "pro": pro[:4],
+            "contra": contra[:4],
+        })
 
     return {
-        "tools": tools,
-        "words": words,
-        "edges": [
-            e for e in edges if e["tool"] in tools and e["word"] in words
-        ],
+        "total_calls": total_calls,
+        "generic_words": generic_words,
+        "candidates": candidates,
     }

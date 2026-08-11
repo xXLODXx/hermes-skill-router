@@ -230,6 +230,60 @@ def test_prune_removes_non_causal_words():
     assert engine.prune_lexicon(lexicon, small) == lexicon
 
 
+def test_cluster_words_identifies_causal_group():
+    """Cluster = Wörter mit kausaler Assoziation zu einem Tool."""
+    stats = {
+        "total_calls": 100,
+        "words": {"dokument": 4, "scan": 4, "karte": 10},
+        "tools": {"pdf-extraction": 10, "kanban-orchestration": 20},
+    }
+    lexicon = {
+        "dokument": {"pdf-extraction": 2},
+        "scan": {"pdf-extraction": 2},
+        "karte": {"kanban-orchestration": 5},
+    }
+    cluster = engine.cluster_words("pdf-extraction", lexicon, stats)
+    assert cluster == {"dokument", "scan"}
+    assert "karte" not in cluster
+
+
+def test_cluster_bonus_rewards_coherent_hits():
+    stats = {
+        "total_calls": 100,
+        "words": {"dokument": 4, "scan": 4, "karte": 10},
+        "tools": {"pdf-extraction": 10, "kanban-orchestration": 20},
+    }
+    lexicon = {
+        "dokument": {"pdf-extraction": 2},
+        "scan": {"pdf-extraction": 2},
+        "karte": {"kanban-orchestration": 5},
+    }
+    assert engine.cluster_bonus({"dokument", "scan"}, "pdf-extraction", lexicon, stats) == 2
+    assert engine.cluster_bonus({"dokument"}, "pdf-extraction", lexicon, stats) == 0
+    assert engine.cluster_bonus({"dokument", "scan", "x"}, "pdf-extraction", lexicon, stats) == 2
+    assert engine.cluster_bonus({"karte"}, "pdf-extraction", lexicon, stats) == 0
+
+
+def test_cluster_bonus_lifts_skill_above_competitor(env):
+    """Kohärente Mehrfach-Treffer heben einen Skill über einen Einzelwort-Skill."""
+    stats = {
+        "total_calls": 100,
+        "words": {"dokument": 4, "scan": 4, "karte": 10},
+        "tools": {"pdf-extraction": 10, "kanban-orchestration": 20},
+    }
+    lexicon = {
+        "dokument": {"pdf-extraction": 2},
+        "scan": {"pdf-extraction": 2},
+        "karte": {"kanban-orchestration": 5},
+    }
+    out = engine.build_injection(
+        "dokument scan karte", env / "skills", None, lexicon, stats
+    )
+    assert out is not None
+    # pdf-extraction: count 4 + Cluster-Bonus 2 = 6  >  kanban: 5 + 0
+    assert out.index("pdf-extraction") < out.index("kanban-orchestration")
+
+
 def test_generic_lexicon_word_not_weighted(env):
     """Wort mit >=5 Skill-Assoziationen ist generisch — erzeugt KEIN Matching-Gewicht."""
     generic = {
