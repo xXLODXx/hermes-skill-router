@@ -12,20 +12,41 @@ Keine externen Abhängigkeiten — reine Standardbibliothek.
 import re
 import subprocess
 import sys
+from pathlib import Path
 
-# (Regex, Beschreibung) — Muster, die NIE im Repo landen dürfen
+# Generische Muster — unkritisch, können im Repo stehen
 PATTERNS = [
     (r"\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b", "IP-Adresse"),
     (r"[Cc]:\\[Uu]sers\\", "Windows-Benutzerpfad"),
     (r"\bt_[a-z0-9]{8}\b", "Task-ID"),
-    (r"\b[PERSON1]\b", "Benutzername"),
-    (r"\b[PERSON2]\b", "Benutzername"),
-    (r"[Ss]enioren[- ]?[Ll]otse", "Projektname"),
     (r"\bapi\.[a-z0-9-]+\.de\b", "private Domain"),
 ]
 
+# Persönliche Muster aus lokaler Datei (nie im Repo!)
+_PERSONAL_PATTERNS_FILE = Path.home() / ".hermes" / "guard-personal-patterns.txt"
+
+
+def _load_personal_patterns() -> list[tuple[str, str]]:
+    """Persönliche Muster laden: eine Regex pro Zeile, label = 'persönlich'."""
+    try:
+        lines = _PERSONAL_PATTERNS_FILE.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return []
+    patterns = []
+    for line in lines:
+        line = line.strip()
+        if line and not line.startswith("#"):
+            patterns.append((line, "persönliches Muster"))
+    return patterns
+
+
 # Dateien, die niemals committet werden dürfen (Lern-Daten mit Nutzer-Wörtern)
-FORBIDDEN_FILES = {"learned_keywords.json"}
+FORBIDDEN_FILES = {
+    "learned_keywords.json",
+    "learned_keywords.train.json",
+    "tool_stats.json",
+    "tool_stats.train.json",
+}
 
 
 def main() -> int:
@@ -33,6 +54,8 @@ def main() -> int:
         ["git", "diff", "--cached", "--name-only"],
         capture_output=True, text=True, check=True,
     ).stdout.splitlines()
+
+    all_patterns = PATTERNS + _load_personal_patterns()
 
     problems: list[str] = []
     for f in files:
@@ -46,7 +69,7 @@ def main() -> int:
                 content = fh.read()
         except OSError:
             continue
-        for pattern, label in PATTERNS:
+        for pattern, label in all_patterns:
             for m in re.finditer(pattern, content):
                 problems.append(f"{f}: {label} gefunden: {m.group(0)!r}")
 
