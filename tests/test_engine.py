@@ -440,11 +440,10 @@ def test_learn_from_result_associates_body_words(env):
     assert "kanban" in lexicon
 
 
-def test_learn_from_result_kanban_body_gets_full_weight(env):
-    """F2: Kanban-Body-Felder (body) zählen 1x, sonstige Felder 0.5x.
-
-    Der Boost ist über die Counts sichtbar: body-Wörter haben höhere Counts
-    als generic-Feld-Wörter bei gleicher Häufigkeit.
+def test_learn_from_result_body_vs_non_task_fields(env):
+    """Option A (Wortqualität): NUR Aufgaben-Felder (body/description) werden
+    gelernt — output/text/result/summary (Status, System-Meldungen) sind
+    Rauschen und fliegen komplett raus.
     """
     lexicon, stats = {}, engine.empty_stats()
     result = '{"body": "riverpod refactor", "output": "riverpod version 3"}'
@@ -452,15 +451,14 @@ def test_learn_from_result_kanban_body_gets_full_weight(env):
         user_message="mach weiter", tool_name="terminal",
         result=result, lexicon=lexicon, stats=stats,
     )
-    body_count = lexicon["riverpod"]["terminal"]
-    output_count = lexicon["version"]["terminal"]
-    assert body_count > output_count  # 1x vs 0.5x
+    assert lexicon["riverpod"]["terminal"] == 2  # body: 1x-Gewicht
+    assert "version" not in lexicon  # output-Feld: NICHT mehr gelernt
 
 
 def test_learn_from_result_ignores_failed_status(env):
     """Fehler-Ergebnisse sind Rauschen — nichts lernen."""
     lexicon, stats = {}, engine.empty_stats()
-    result = '{"status": "error", "error_message": "timeout riverpod build"}'
+    result = '{"status": "error", "body": "timeout riverpod build"}'
     lexicon, stats = engine.learn_from_result(
         user_message="baue die app", tool_name="terminal",
         result=result, lexicon=lexicon, stats=stats,
@@ -470,10 +468,10 @@ def test_learn_from_result_ignores_failed_status(env):
 
 
 def test_learn_from_result_caps_huge_output(env):
-    """Riesen-Outputs (stdout-Monster) dürfen das Lexikon nicht fluten."""
+    """Riesen-Bodies (stdout-Monster) dürfen das Lexikon nicht fluten."""
     lexicon, stats = {}, engine.empty_stats()
     huge = "".join(f"filler{i} " for i in range(5000))
-    result = f'{{"output": "{huge[:2000]}"}}'
+    result = f'{{"body": "{huge[:2000]}"}}'
     lexicon, stats = engine.learn_from_result(
         user_message="kurz", tool_name="terminal",
         result=result, lexicon=lexicon, stats=stats,
@@ -482,14 +480,26 @@ def test_learn_from_result_caps_huge_output(env):
 
 
 def test_learn_from_result_plaintext_fallback(env):
-    """Plaintext-Ergebnisse (kein JSON) werden als Text gelernt."""
+    """Plaintext-Ergebnisse (kein JSON) sind Rauschen — NICHT mehr gelernt.
+
+    Option A: Plaintext = Terminal-Ausgaben/System-Meldungen (nie User-
+    Suchbegriffe). Nur strukturierte Aufgaben-Felder (body/description)
+    sind Lern-Signale. (User-Message-Wörter werden weiterhin gelernt —
+    das ist das Primärsignal.)
+    """
     lexicon, stats = {}, engine.empty_stats()
     result = "document scan completed: ocr extracted 3 pages"
     lexicon, stats = engine.learn_from_result(
         user_message="scan das dokument", tool_name="skill_view",
         result=result, lexicon=lexicon, stats=stats,
     )
-    assert "document" in lexicon or "scan" in lexicon or "ocr" in lexicon
+    # User-Wörter (Primärsignal) bleiben:
+    assert "dokument" in lexicon
+    assert "scan" in lexicon
+    # Plaintext-Ergebnis-Wörter (nur im Ergebnis, nicht in der Message):
+    assert "extracted" not in lexicon
+    assert "completed" not in lexicon
+    assert "pages" not in lexicon
 
 
 def test_learn_from_result_never_learns_ids(env):

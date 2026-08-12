@@ -46,8 +46,12 @@ THREE_LETTER_WORDS = frozenset({
 # Lern-Eingaben verwendet (assoziiert mit der User-Message, die sie auslöste),
 # nie als Direkt-Match der aktuellen Injektion. Feature-Flag output_learning
 # (config.yaml, Default aus) schaltet die neuen Quellen frei.
+# Whitelist bewusst NUR Aufgaben-Felder: body (Task-Body) + description —
+# output/text/result/summary enthalten Status-Felder und System-Meldungen
+# (pending/completed/wurdest/capacity...), die nie User-Suchbegriffe sind
+# (Option A der Wortqualitäts-Analyse 2026-08-12).
 RESULT_TEXT_FIELDS = frozenset({
-    "body", "output", "text", "description", "result", "summary",
+    "body", "description",
 })
 RESULT_BOOST_FIELDS = frozenset({"body"})  # F2: Kanban-Task-Body 1x-Gewicht
 RESULT_MAX_CHARS = 500          # Größen-Deckel je Feld
@@ -277,10 +281,10 @@ def _result_text_fields(result: object) -> list[tuple[str, str]]:
                 fields.append((key, value[:RESULT_MAX_CHARS]))
         return fields
     if isinstance(result, (list, tuple)):
-        text = " ".join(str(v) for v in result)
-        return [("output", text[:RESULT_MAX_CHARS])] if text.strip() else []
-    text = str(result)
-    return [("output", text[:RESULT_MAX_CHARS])] if text.strip() else []
+        # Plaintext/Listen = Output/Rauschen: KEINE Lern-Felder (Option A)
+        return []
+    # Plaintext = Terminal-Ausgaben/System-Meldungen: keine Lern-Signale
+    return []
 
 
 def _lexicon_add(
@@ -320,10 +324,14 @@ def learn_from_result(
         target = (args or {}).get("name") or tool_name
     try:
         fields = _result_text_fields(result)
+        # User-Wörter (Entscheidungsphase) als Primärsignal IMMER lernen —
+        # auch wenn das Ergebnis keine Lern-Felder hat (Option A: Plaintext
+        # ist Rauschen, aber die User-Message bleibt das Kern-Signal).
+        user_words = learn_words(user_message, lexicon, df_generic)
+        if user_words:
+            _lexicon_add(lexicon, stats, target, user_words, 1)
         if not fields:
             return lexicon, stats
-        # User-Wörter (Entscheidungsphase) als Primärsignal 1x
-        user_words = learn_words(user_message, lexicon, df_generic)
         # Ergebnis-Wörter je Feld mit Feld-Gewicht (body 1x=2, sonst 0.5x=1)
         for field, text in fields:
             weight = (
@@ -337,8 +345,6 @@ def learn_from_result(
                 lexicon, stats, target,
                 result_words[:MAX_RESULT_WORDS], weight,
             )
-        # User-Wörter ergänzen (1x)
-        _lexicon_add(lexicon, stats, target, user_words, 1)
     except Exception:  # noqa: S110, BLE001 — Observer: niemals den Agent-Loop brechen
         pass
     return lexicon, stats
