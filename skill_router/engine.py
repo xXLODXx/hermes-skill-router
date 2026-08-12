@@ -338,6 +338,93 @@ def learn_from_result(
     return lexicon, stats
 
 
+# ── LLM-Antworten (post_llm_call) — Task 2 ──────────────────────────────────
+# assistant_response ist eine weitere FOLGE-Lern-Eingabe. Löst das
+# 'ja, Option A'-Problem: Die Nutzer-Bestätigung ist nur mit dem LLM-Output
+# zusammen verständlich — die Fachbegriffe stehen in der Antwort. Bei
+# Bestätigungs-Mustern wird zusätzlich die letzte Assistant-Antwort aus der
+# History beigemischt (dort stehen die Optionen).
+RESPONSE_CONFIRM_PATTERN = re.compile(
+    r"\b(option|entscheid|nehmen wir|wir nehmen|passt|lieber|besser)\b",
+    re.IGNORECASE,
+)
+RESPONSE_MAX_CHARS = 500
+RESPONSE_HISTORY_CHARS = 300   # nur der relevante Teil der letzten Antwort
+
+
+def _history_assistant_text(conversation_history: object) -> str:
+    """Letzte Assistant-Nachricht aus der History extrahieren (defensiv).
+
+    Akzeptiert dicts ({'role': 'assistant', 'content': ...}) oder Strings.
+    Liefert '' wenn keine Assistant-Nachricht vorhanden.
+    """
+    if not isinstance(conversation_history, (list, tuple)):
+        return ""
+    for entry in reversed(conversation_history):
+        if isinstance(entry, str):
+            return entry[RESPONSE_HISTORY_CHARS * -1:] if entry else ""
+        if isinstance(entry, dict) and entry.get("role") == "assistant":
+            content = entry.get("content") or ""
+            if isinstance(content, (list, tuple)):
+                content = " ".join(str(v) for v in content)
+            return str(content)[:RESPONSE_HISTORY_CHARS]
+    return ""
+
+
+def learn_from_response(
+    user_message: str,
+    assistant_response: str,
+    conversation_history: object,
+    lexicon: dict,
+    stats: dict,
+) -> tuple[dict, dict]:
+    """LLM-Antwort (post_llm_call) als Lern-Eingabe verwenden.
+
+    Die Antwort enthält die tatsächlich gewählten/verwendeten Fachbegriffe
+    (z. B. 'wir nehmen Option A: Riverpod'). Löst das 'ja, Option A'-Problem:
+    Die Nutzer-Bestätigung ist nur mit dem LLM-Output zusammen verständlich.
+
+    Mechanismus (kausal sauber): Die Antwort-Fachwörter verstärken die Skills,
+    die mit den User-Wörtern dieser Aufgabe bereits assoziiert sind. Ohne
+    bestehende Assoziation wird nichts gelernt (kein Signal — SoK-Warnung:
+    ungefiltertes Lernen aus Modell-Output degradiert). Bei Bestätigungs-
+    Mustern wird die letzte Assistant-Antwort aus der History beigemischt,
+    um 'Option A' aufzulösen.
+    """
+    try:
+        response_text = str(assistant_response or "")[:RESPONSE_MAX_CHARS]
+        response_words = learn_words(response_text, lexicon)
+        if not response_words:
+            return lexicon, stats
+        # Entscheidungs-Kontext: bei Bestätigungs-Muster letzte Assistant-
+        # Antwort beimischen (dort stehen die Optionen mit Fachbegriffen).
+        if RESPONSE_CONFIRM_PATTERN.search(response_text):
+            history_text = _history_assistant_text(conversation_history)
+            if history_text:
+                response_words += learn_words(history_text, lexicon)
+        # Skills finden, die die User-Wörter dieser Aufgabe bereits kennen
+        user_words = learn_words(user_message, lexicon)
+        target_skills: set[str] = set()
+        for w in user_words:
+            entry = lexicon.get(w)
+            if not entry:
+                continue
+            for skill_name, count in entry.items():
+                if count >= MIN_COOCCUR:
+                    target_skills.add(skill_name)
+        if not target_skills:
+            return lexicon, stats  # kein Signal — nichts lernen
+        # Antwort-Fachwörter verstärken genau diese Skills
+        for skill_name in target_skills:
+            _lexicon_add(
+                lexicon, stats, skill_name,
+                response_words[:MAX_RESULT_WORDS], RESULT_WORD_WEIGHT,
+            )
+    except Exception:  # noqa: S110, BLE001 — Observer: niemals den Agent-Loop brechen
+        pass
+    return lexicon, stats
+
+
 def lift(word: str, tool: str, lexicon: dict, stats: dict) -> float:
     """Kausalitaets-Mass: beobachtete Kookkurrenz / Zufallserwartung.
     ~1.0 = zufaellig (generisches Wort), deutlich >1 = spezifische Assoziation."""

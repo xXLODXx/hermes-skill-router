@@ -116,6 +116,38 @@ def register(ctx):
         engine.save_stats(stats, _STATS_PATH)
         return
 
+    def on_llm_response(
+        assistant_response: str, conversation_history: object, **kwargs
+    ):
+        """LLM-Antwort als Lern-Eingabe (post_llm_call, Output-Lernen).
+
+        Löst das 'ja, Option A'-Problem: Die Fachbegriffe stehen in der
+        assistant_response, nicht in der Nutzer-Bestätigung. Verstärkt die
+        Skills, die die User-Wörter dieser Aufgabe bereits kennen.
+        Nur aktiv bei Feature-Flag output_learning (Default aus). Observer.
+        """
+        if not engine.output_learning_enabled():
+            return
+        ctx_ = _session_ctx.get("current")
+        if not ctx_:
+            return
+        message = ctx_.get("message", "")
+        if not assistant_response:
+            return
+        lexicon = engine.load_lexicon(_LEXICON_PATH)
+        stats = engine.load_stats(_STATS_PATH)
+        lexicon, stats = engine.learn_from_response(
+            message,
+            assistant_response,
+            conversation_history,
+            lexicon,
+            stats,
+        )
+        engine.save_lexicon(lexicon, _LEXICON_PATH)
+        engine.save_stats(stats, _STATS_PATH)
+        return
+
     ctx.register_hook("pre_llm_call", inject)
     ctx.register_hook("pre_tool_call", on_tool)
     ctx.register_hook("post_tool_call", on_tool_result)
+    ctx.register_hook("post_llm_call", on_llm_response)

@@ -539,3 +539,108 @@ def test_output_learning_flag_config_false(tmp_path, monkeypatch):
         encoding="utf-8",
     )
     assert engine.output_learning_enabled() is False
+
+
+# ── Output-Lernen (post_llm_call) — Task 2 ─────────────────────────────────
+
+def test_learn_from_response_reinforces_skill_association(env):
+    """LLM-Antwort verstärkt die Skill-Assoziation der User-Wörter.
+
+    'ja, Option A' ist nur mit dem LLM-Output verständlich: Die Fachbegriffe
+    (riverpod, go_router) stehen in der Antwort. Sie werden den Skills
+    zugeordnet, die die User-Wörter dieser Aufgabe bereits kennen.
+    """
+    lexicon = {"option": {"skill-a": 2}, "welche": {"skill-a": 1}}
+    stats = {
+        "total_calls": 5,
+        "words": {"option": 3, "welche": 2},
+        "tools": {"skill-a": 3},
+    }
+    reply = "Option A: riverpod mit go_router passt am besten"
+    lexicon, stats = engine.learn_from_response(
+        user_message="welche option sollen wir nehmen",
+        assistant_response=reply,
+        conversation_history=[],
+        lexicon=lexicon,
+        stats=stats,
+    )
+    # Antwort-Fachwörter wurden Skill-a zugeordnet (Verstärkung)
+    assert lexicon["riverpod"]["skill-a"] >= 1
+    assert lexicon["router"]["skill-a"] >= 1
+
+
+def test_learn_from_response_uses_history_for_confirmation(env):
+    """Bestätigungs-Muster („wir nehmen Option A") löst die Wahl über die History.
+
+    'Option A' allein ist leer — die Optionen stehen in der vorherigen
+    Assistant-Antwort. Deren Fachwörter werden den Skill-Assoziationen
+    der User-Wörter zugeordnet.
+    """
+    lexicon = {"entscheide": {"skill-a": 2}}
+    stats = {
+        "total_calls": 5,
+        "words": {"entscheide": 2},
+        "tools": {"skill-a": 2},
+    }
+    history = [
+        {"role": "assistant",
+         "content": "Option A: riverpod mit go_router. Option B: bloc mit provider."},
+        {"role": "user", "content": "ok"},
+    ]
+    reply = "wir nehmen Option A"
+    lexicon, stats = engine.learn_from_response(
+        user_message="entscheide du",
+        assistant_response=reply,
+        conversation_history=history,
+        lexicon=lexicon,
+        stats=stats,
+    )
+    assert lexicon["riverpod"]["skill-a"] >= 1  # aus der History aufgelöst
+    assert lexicon["router"]["skill-a"] >= 1
+
+
+def test_learn_from_response_no_association_no_learning(env):
+    """Ohne bestehende Skill-Assoziation der User-Wörter: nichts lernen.
+
+    Kein Signal → kein Lernen (konsistent mit SoK-Warnung: ungefiltertes
+    Lernen aus Modell-Output degradiert).
+    """
+    lexicon, stats = {}, engine.empty_stats()
+    reply = "Option A: riverpod mit go_router"
+    lexicon, stats = engine.learn_from_response(
+        user_message="welche option sollen wir nehmen",
+        assistant_response=reply,
+        conversation_history=[],
+        lexicon=lexicon,
+        stats=stats,
+    )
+    assert lexicon == {}
+
+
+def test_learn_from_response_ignores_empty(env):
+    """Leere Antworten lernen nichts."""
+    lexicon = {"wort": {"skill-a": 1}}
+    stats = {"total_calls": 2, "words": {"wort": 1}, "tools": {"skill-a": 1}}
+    lexicon, stats = engine.learn_from_response(
+        user_message="test", assistant_response="",
+        conversation_history=[], lexicon=lexicon, stats=stats,
+    )
+    assert lexicon == {"wort": {"skill-a": 1}}  # unverändert
+
+
+def test_learn_from_response_never_learns_ids(env):
+    """IDs/Hashes aus LLM-Antworten nie lernen (Privacy)."""
+    lexicon = {"mach": {"skill-a": 2}, "weiter": {"skill-a": 1}}
+    stats = {
+        "total_calls": 5,
+        "words": {"mach": 2, "weiter": 1},
+        "tools": {"skill-a": 3},
+    }
+    task_id = "t_" + "a1b2c3d4"
+    reply = f"nutze dokument {task_id} fuer riverpod"
+    lexicon, stats = engine.learn_from_response(
+        user_message="mach weiter", assistant_response=reply,
+        conversation_history=[], lexicon=lexicon, stats=stats,
+    )
+    assert task_id not in lexicon
+    assert "riverpod" in lexicon
