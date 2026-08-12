@@ -31,7 +31,7 @@ if str(_PLUGIN_DIR) not in sys.path:
     sys.path.insert(0, str(_PLUGIN_DIR))
 
 # Eine Quelle für Lift/Schwellen/Status — D3-Fix: keine Duplikation mehr.
-from skill_router.engine import (  # noqa: E402
+from skill_router.engine import (
     LIFT_THRESHOLD,
     MIN_CALLS_FOR_LIFT,
     MIN_COOCCUR,
