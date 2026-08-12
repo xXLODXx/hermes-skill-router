@@ -350,24 +350,45 @@ RESPONSE_CONFIRM_PATTERN = re.compile(
 )
 RESPONSE_MAX_CHARS = 500
 RESPONSE_HISTORY_CHARS = 300   # nur der relevante Teil der letzten Antwort
+_OPTION_CHOICE_PATTERN = re.compile(
+    r"option\s+([a-z0-9])", re.IGNORECASE
+)
 
 
-def _history_assistant_text(conversation_history: object) -> str:
-    """Letzte Assistant-Nachricht aus der History extrahieren (defensiv).
+def _history_option_text(
+    conversation_history: object, chosen_option: str | None
+) -> str:
+    """Text der GEWÄHLTEN Option aus der letzten Assistant-Antwort.
 
-    Akzeptiert dicts ({'role': 'assistant', 'content': ...}) oder Strings.
-    Liefert '' wenn keine Assistant-Nachricht vorhanden.
+    Löst 'Option A' präzise auf: Statt die ganze History-Antwort beizumischen
+    (die auch die nicht gewählten Optionen enthält → Rauschen), wird nur die
+    Zeile der gewählten Option extrahiert. Ohne erkennbare Option: '' (kein
+    Signal — nicht die ganze Antwort lernen).
     """
+    if not chosen_option:
+        return ""
     if not isinstance(conversation_history, (list, tuple)):
         return ""
     for entry in reversed(conversation_history):
         if isinstance(entry, str):
-            return entry[RESPONSE_HISTORY_CHARS * -1:] if entry else ""
-        if isinstance(entry, dict) and entry.get("role") == "assistant":
+            text = entry
+        elif isinstance(entry, dict) and entry.get("role") == "assistant":
             content = entry.get("content") or ""
             if isinstance(content, (list, tuple)):
                 content = " ".join(str(v) for v in content)
-            return str(content)[:RESPONSE_HISTORY_CHARS]
+            text = str(content)
+        else:
+            continue
+        # Zeile der gewählten Option: 'Option A: ...' — stoppt am nächsten
+        # 'Option'-Token oder Zeilenende (nicht die verworfenen Optionen mitnehmen)
+        pattern = re.compile(
+            rf"option\s+{re.escape(chosen_option)}\s*[:)\-–—]?"
+            r"[^\n]*?(?=\s+option\s+[a-z0-9]|\n|$)",
+            re.IGNORECASE,
+        )
+        m = pattern.search(text)
+        if m:
+            return m.group(0)[:RESPONSE_HISTORY_CHARS]
     return ""
 
 
@@ -388,20 +409,23 @@ def learn_from_response(
     die mit den User-Wörtern dieser Aufgabe bereits assoziiert sind. Ohne
     bestehende Assoziation wird nichts gelernt (kein Signal — SoK-Warnung:
     ungefiltertes Lernen aus Modell-Output degradiert). Bei Bestätigungs-
-    Mustern wird die letzte Assistant-Antwort aus der History beigemischt,
-    um 'Option A' aufzulösen.
+    Mustern wird NUR die Zeile der gewählten Option aus der History extrahiert
+    (nicht die ganze Antwort — sonst lernt man auch die verworfenen Optionen).
     """
     try:
         response_text = str(assistant_response or "")[:RESPONSE_MAX_CHARS]
         response_words = learn_words(response_text, lexicon)
         if not response_words:
             return lexicon, stats
-        # Entscheidungs-Kontext: bei Bestätigungs-Muster letzte Assistant-
-        # Antwort beimischen (dort stehen die Optionen mit Fachbegriffen).
+        # Entscheidungs-Kontext: 'Option A' präzise über die History auflösen
         if RESPONSE_CONFIRM_PATTERN.search(response_text):
-            history_text = _history_assistant_text(conversation_history)
-            if history_text:
-                response_words += learn_words(history_text, lexicon)
+            choice_m = _OPTION_CHOICE_PATTERN.search(response_text)
+            if choice_m:
+                history_text = _history_option_text(
+                    conversation_history, choice_m.group(1).casefold()
+                )
+                if history_text:
+                    response_words += learn_words(history_text, lexicon)
         # Skills finden, die die User-Wörter dieser Aufgabe bereits kennen
         user_words = learn_words(user_message, lexicon)
         target_skills: set[str] = set()

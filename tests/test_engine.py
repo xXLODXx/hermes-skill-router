@@ -597,6 +597,10 @@ def test_learn_from_response_uses_history_for_confirmation(env):
     )
     assert lexicon["riverpod"]["skill-a"] >= 1  # aus der History aufgelöst
     assert lexicon["router"]["skill-a"] >= 1
+    # Präzisions-Regression: die NICHT gewählte Option B darf nicht gelernt
+    # werden (die ganze History-Antwort beimischen = Rauschen)
+    assert "bloc" not in lexicon
+    assert "provider" not in lexicon
 
 
 def test_learn_from_response_no_association_no_learning(env):
