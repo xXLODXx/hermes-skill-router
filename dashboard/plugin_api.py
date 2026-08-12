@@ -17,12 +17,21 @@ from __future__ import annotations
 
 import json
 import logging
+import sys
 from pathlib import Path
 
 from fastapi import APIRouter
 
+# Der Web-Server lädt plugin_api.py als ISOLIERTES Modul (spec_from_file_location)
+# — das Plugin-Verzeichnis ist dabei NICHT im sys.path. Ohne diesen Eintrag
+# schlägt der skill_router-Import fehl und die API-Routen werden nie gemountet
+# (404 im Dashboard). Das Plugin-Verzeichnis muss sich selbst bekannt machen.
+_PLUGIN_DIR = Path(__file__).resolve().parent.parent
+if str(_PLUGIN_DIR) not in sys.path:
+    sys.path.insert(0, str(_PLUGIN_DIR))
+
 # Eine Quelle für Lift/Schwellen/Status — D3-Fix: keine Duplikation mehr.
-from skill_router.engine import (
+from skill_router.engine import (  # noqa: E402
     LIFT_THRESHOLD,
     MIN_CALLS_FOR_LIFT,
     MIN_COOCCUR,
@@ -33,7 +42,6 @@ from skill_router.engine import (
 log = logging.getLogger(__name__)
 router = APIRouter()
 
-_PLUGIN_DIR = Path(__file__).resolve().parent.parent
 # Daten liegen zentral im Plugin-Datenordner (data/) — dieselben Pfade wie
 # die Engine (skill_router/__init__.py). D2-Fix: vorher las das Dashboard
 # aus dem Root und zeigte bei Repo-Installation immer leere Daten.
