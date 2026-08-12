@@ -22,8 +22,11 @@ log = logging.getLogger(__name__)
 router = APIRouter()
 
 _PLUGIN_DIR = Path(__file__).resolve().parent.parent
-_LEXICON_PATH = _PLUGIN_DIR / "learned_keywords.json"
-_STATS_PATH = _PLUGIN_DIR / "tool_stats.json"
+# Daten liegen zentral im Plugin-Datenordner (data/) — dieselben Pfade wie
+# die Engine (skill_router/__init__.py). D2-Fix: vorher las das Dashboard
+# aus dem Root und zeigte bei Repo-Installation immer leere Daten.
+_LEXICON_PATH = _PLUGIN_DIR / "data" / "learned_keywords.json"
+_STATS_PATH = _PLUGIN_DIR / "data" / "tool_stats.json"
 
 # Konsistent mit engine.py — dupliziert für die Anzeige.
 _LIFT_THRESHOLD = 2.0
