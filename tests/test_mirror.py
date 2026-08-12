@@ -51,33 +51,32 @@ def _git_head(repo: Path) -> str | None:
 
 
 def test_install_is_git_clone_of_repo() -> None:
-    """Der installierte Clone muss auf dem Repo-HEAD (oder davor) stehen."""
+    """Der installierte Clone muss ein legitimer Stand des Repos sein."""
     if not INSTALL_DIR.exists():
         pytest.skip("Plugin nicht installiert (CI-Umgebung)")
     repo_head = _git_head(REPO_DIR)
     install_head = _git_head(INSTALL_DIR)
     assert repo_head is not None, "Repo ist kein Git-Repository"
     assert install_head is not None, "Installierter Clone ist kein Git-Repository"
-    # Installierter Clone darf nie NEUER sein als das Repo (wäre Fremdcode).
-    # Er darf älter sein (nicht gepullt), aber dann warnen wir via Engine-Vergleich.
-    assert install_head == repo_head or _git_is_ancestor(
-        INSTALL_DIR, install_head, repo_head
-    ), "Installierter Clone weicht vom Repo ab (Fremdcode?!)"
-
-
-def _git_is_ancestor(repo: Path, maybe_ancestor: str, head: str) -> bool:
+    # Der Clone-HEAD muss im REPO existieren (git cat-file): dann ist der
+    # Clone ein legitimer Stand (synchron oder nicht gepullt, aber nie fremd).
+    # Läuft im Repo-Kontext — der Clone kennt neuere Repo-Commits nicht.
     try:
         result = subprocess.run(
-            ["git", "merge-base", "--is-ancestor", maybe_ancestor, head],
-            cwd=repo,
+            ["git", "cat-file", "-e", f"{install_head}^{{commit}}"],
+            cwd=REPO_DIR,
             capture_output=True,
             text=True,
             timeout=10,
-            check=False,  # Exit-Code 0/1 ist das Ergebnis (ancestor ja/nein)
+            check=False,
         )
-        return result.returncode == 0
+        known = result.returncode == 0
     except (OSError, subprocess.TimeoutExpired):
-        return False
+        known = False
+    assert known, (
+        f"Installierter Clone-HEAD {install_head} existiert nicht im Repo "
+        f"(HEAD {repo_head}) — Fremdcode oder fremdes Repo!"
+    )
 
 
 def test_installed_engine_behaves_like_repo() -> None:
