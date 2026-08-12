@@ -1,5 +1,5 @@
 {
-  "name": "workflow-router-autoload",
+  "name": "skill-router",
   "label": "Skill Router",
   "description": "Skill-Routing-Statistik: Wort→Tool-Kookkurrenz, Lift-Gewichtung, Lexikon-Zustand und Selbstreinigung.",
   "icon": "GitBranch",

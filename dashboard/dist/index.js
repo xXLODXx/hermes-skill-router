@@ -1,7 +1,7 @@
 /**
  * Skill Router — Dashboard Plugin
  *
- * Zeigt den Zustand des workflow-router-autoload Plugins: getrackte
+ * Zeigt den Zustand des skill-router Plugins: getrackte
  * Tool-Starts, Lexikon-Größe, Wort-Tabelle mit Kausalitäts-Status (Lift)
  * und eine Entscheidungs-Mindmap im Stil einer klassischen Pro/Contra-
  * Mindmap: zentral "Task", radiale Skill-Kandidaten mit Status-Icons
@@ -23,7 +23,7 @@
   const { Card, CardContent, Badge } = SDK.components;
   const { useState, useEffect } = SDK.hooks;
 
-  const API = "/api/plugins/workflow-router-autoload";
+  const API = "/api/plugins/skill-router";
 
   const STATUS_META = {
     kausal: { label: "kausal", sym: "✓", cls: "sr-badge sr-badge--causal", color: "#16a34a" },
@@ -279,6 +279,6 @@
   }
 
   if (window.__HERMES_PLUGINS__ && typeof window.__HERMES_PLUGINS__.register === "function") {
-    window.__HERMES_PLUGINS__.register("workflow-router-autoload", Page);
+    window.__HERMES_PLUGINS__.register("skill-router", Page);
   }
 })();

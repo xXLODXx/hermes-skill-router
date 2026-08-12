@@ -1,6 +1,6 @@
 """Skill-Router Dashboard-Plugin — Backend-API.
 
-Mounted at /api/plugins/workflow-router-autoload/ by the dashboard plugin
+Mounted at /api/plugins/skill-router/ by the dashboard plugin
 system (auth via the dashboard session token, like all core API routes).
 
 Liest die beiden Lern-Dateien des Plugins (learned_keywords.json =
