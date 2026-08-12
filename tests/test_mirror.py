@@ -41,6 +41,7 @@ def _git_head(repo: Path) -> str | None:
             capture_output=True,
             text=True,
             timeout=10,
+            check=False,  # Rückgabe-Code wird manuell geprüft
         )
         if result.returncode == 0:
             return result.stdout.strip()
@@ -72,6 +73,7 @@ def _git_is_ancestor(repo: Path, maybe_ancestor: str, head: str) -> bool:
             capture_output=True,
             text=True,
             timeout=10,
+            check=False,  # Exit-Code 0/1 ist das Ergebnis (ancestor ja/nein)
         )
         return result.returncode == 0
     except (OSError, subprocess.TimeoutExpired):
