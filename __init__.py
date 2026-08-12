@@ -18,6 +18,6 @@ _PLUGIN_DIR = Path(__file__).resolve().parent
 if str(_PLUGIN_DIR) not in sys.path:
     sys.path.insert(0, str(_PLUGIN_DIR))
 
-from skill_router import register  # noqa: E402
+from skill_router import register
 
 __all__ = ["register"]
