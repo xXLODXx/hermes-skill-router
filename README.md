@@ -1,5 +1,7 @@
 # Hermes Skill Router
 
+[![CI](https://github.com/xXLODXx/hermes-skill-router/actions/workflows/ci.yml/badge.svg)](https://github.com/xXLODXx/hermes-skill-router/actions/workflows/ci.yml)
+
 A [Hermes Agent](https://hermes-agent.nousresearch.com) plugin that makes skill
 discovery **task-aware and self-learning**. It injects a compact, relevance-filtered
 list of routing topics and skills into the first turn of every session — so the
@@ -135,6 +137,17 @@ Both sources are hardened: field whitelist (`body`, `output`, `text`,
 statuses ignored, IDs/hashes never learned, and nothing is learned without an
 existing causal association (lift gate). The last 3 tool results and the last
 assistant reply also enrich follow-up injections in the same session.
+
+## Stopword strategy (static + dynamic)
+
+- A small static, language-neutral base set filters universal filler words
+  (`the`, `und`, `task`, `app`, …).
+- **Dynamic document-frequency generics** (Schritt 7): any word that describes
+  ≥ 40 % of all installed skills (tags + name + category + description) is
+  treated as generic — it no longer distinguishes anything. This is
+  **language-independent** (pure statistics, no dictionary) and
+  **self-maintaining** (adapts to your skill collection). Threshold:
+  `GENERIC_DF_RATIO` in `skill_router/engine.py`.
 
 ## Development
 
