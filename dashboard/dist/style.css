@@ -57,32 +57,36 @@
 .sr-legend-item { display: inline-flex; align-items: center; gap: 5px; }
 .sr-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; }
 
-/* ── Cluster-Ansicht (Zeilen-Layout) ───────────────────────────────────── */
+/* ── Cluster-Ansicht (Zeilen-Layout) — direkte Farben (keine CSS-Variablen:
+   das Dashboard-Theme definiert --foreground/--card ggf. invalide, wodurch
+   var(--x, fallback) NICHT greift und Text unsichtbar wird) ──────────── */
 .sr-clusters { display: flex; flex-direction: column; gap: 6px; }
 .sr-cluster-row {
   display: flex; align-items: center; gap: 12px;
   padding: 8px 12px; border-radius: 10px;
-  background: var(--background, #161b22);
-  border: 1px solid var(--border, #2a2f3a);
+  background: #161b22;
+  border: 1px solid #2a2f3a;
 }
-.sr-cluster-row:nth-child(even) { background: var(--background-soft, #1c2128); }
+.sr-cluster-row:nth-child(even) { background: #1c2128; }
 .sr-cluster-skill {
   flex: 0 0 260px; display: flex; align-items: center; justify-content: space-between;
   gap: 8px; padding: 6px 12px; border-radius: 8px;
-  background: var(--card, #21262d); border: 1px solid #58a6ff;
+  background: #21262d; border: 1px solid #58a6ff;
 }
-.sr-cluster-name { font-weight: 700; font-size: 13px; color: var(--foreground, #e6edf3);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sr-cluster-name {
+  font-weight: 700; font-size: 13px; color: #e6edf3;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 .sr-cluster-count {
   flex: 0 0 auto; min-width: 20px; text-align: center;
-  background: #238636; color: #fff; border-radius: 999px;
+  background: #238636; color: #ffffff; border-radius: 999px;
   font-size: 11px; font-weight: 700; padding: 1px 6px;
 }
 .sr-cluster-words { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .sr-chip {
   display: inline-flex; align-items: center; gap: 4px;
   padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600;
-  background: var(--background, #1c2128); border: 1.5px solid;
+  background: #1c2128; border: 1.5px solid;
   white-space: nowrap;
 }
-.sr-cluster-more { font-size: 12px; opacity: 0.6; font-weight: 600; }
+.sr-cluster-more { font-size: 12px; opacity: 0.6; font-weight: 600; color: #8b949e; }
