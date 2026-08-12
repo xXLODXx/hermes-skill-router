@@ -648,3 +648,60 @@ def test_learn_from_response_never_learns_ids(env):
     )
     assert task_id not in lexicon
     assert "riverpod" in lexicon
+
+
+# ── Session-Puffer (extra_context) — Task 3 ────────────────────────────────
+
+def test_context_words_extracts_from_tool_results(env):
+    """extra_context: Wörter aus Tool-Ergebnissen (Kanban-Body) extrahieren."""
+    ctx = {
+        "tool_results": ['{"body": "Riverpod Screen mit go_router bauen"}'],
+        "last_response": "wir nehmen Option A: riverpod",
+    }
+    words = engine.context_words(ctx)
+    assert "riverpod" in words
+    assert "router" in words
+    assert "screen" in words
+
+
+def test_context_words_ignores_ids(env):
+    """extra_context: IDs/Hashes nie als Match-Wörter verwenden (Privacy)."""
+    task_id = "t_" + "a1b2c3d4"
+    ctx = {"tool_results": [f'{{"body": "aufgabe {task_id} riverpod"}}']}
+    words = engine.context_words(ctx)
+    assert task_id not in words
+    assert "riverpod" in words
+
+
+def test_build_injection_uses_session_context(env):
+    """Folge-Task matcht gegen vorheriges Tool-Ergebnis (Kanban-Body).
+
+    'mach weiter' allein matcht nichts — mit dem Session-Puffer (Kanban-Body
+    aus vorherigem Tool-Call) wird der passende Skill gefunden.
+    """
+    ctx = {
+        "tool_results": ['{"body": "Kanban-Task: PDF-Scan Feature bauen"}'],
+        "last_response": "",
+    }
+    injection = engine.build_injection(
+        "mach mit der aufgabe weiter",
+        env / "skills",
+        None,
+        None,
+        None,
+        extra_context=ctx,
+    )
+    assert injection is not None
+    assert "pdf-extraction" in injection
+
+
+def test_build_injection_ignores_context_without_flag_data(env):
+    """Ohne extra_context verhält sich build_injection wie bisher."""
+    injection = engine.build_injection(
+        "mach mit der aufgabe weiter",
+        env / "skills",
+        None,
+        None,
+        None,
+    )
+    assert injection is None  # 'mach weiter' matcht ohne Kontext nichts

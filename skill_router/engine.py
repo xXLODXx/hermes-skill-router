@@ -646,14 +646,39 @@ def learn_words(user_message: str, lexicon: dict | None = None) -> list[str]:
     return result
 
 
+def context_words(extra_context: dict) -> set[str]:
+    """Match-Wörter aus dem Session-Puffer (Task 3).
+
+    Extrahiert relevante Wörter aus ``tool_results`` (Liste von Tool-
+    Ergebnis-Strings/-Objekten) und ``last_response`` (letzte LLM-Antwort).
+    Nutzt die Ergebnis-Feld-Logik (nur body/output/text/description/result/
+    summary, Größen-Deckel, Fehler-Status ignoriert) und die learn_words-
+    Härtung (IDs/Hashes/Generik nie als Match-Wörter).
+    """
+    words: set[str] = set()
+    for result in extra_context.get("tool_results") or []:
+        for _field, text in _result_text_fields(result):
+            words |= set(learn_words(text))
+    last_response = extra_context.get("last_response") or ""
+    if last_response:
+        words |= set(learn_words(str(last_response)[:RESPONSE_MAX_CHARS]))
+    return words
+
+
 def build_injection(
     user_message: str,
     skills_dir: Path,
     matrix_path: Path | None = None,
     lexicon: dict | None = None,
     stats: dict | None = None,
+    extra_context: dict | None = None,
 ) -> str | None:
     """Injektion bauen: erkannte Matrix-Themen + passende Skills.
+
+    extra_context (Session-Puffer, Task 3): Wörter aus vorherigen
+    Tool-Ergebnissen (``tool_results``) und der letzten LLM-Antwort
+    (``last_response``) erweitern die Match-Fläche — eine Folge-Aufgabe
+    („mach weiter") matcht gegen den Kanban-Body des vorherigen Turns.
 
     Returns None, wenn weder Thema noch Skill matcht (Aufrufer entscheidet,
     ob der kurze Fallback-Hinweis injiziert wird).
@@ -674,6 +699,8 @@ def build_injection(
 
     # Skills matchen (Tags + Name + Kategorie + Description-Wörter + Lexikon)
     words = _task_words(user_message)
+    if extra_context:
+        words |= context_words(extra_context)
     routed = {s for t in topics for s in t["pflicht"] + t["optional"]}
     skill_hits = []
     for s in skills:

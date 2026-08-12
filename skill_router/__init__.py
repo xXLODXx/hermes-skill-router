@@ -42,6 +42,14 @@ def register(ctx):
                 matrix,
                 engine.load_lexicon(_LEXICON_PATH),
                 engine.load_stats(_STATS_PATH),
+                extra_context=(
+                    {
+                        "tool_results": _session_ctx.get("tool_results", [])[-3:],
+                        "last_response": _session_ctx.get("last_response", ""),
+                    }
+                    if engine.output_learning_enabled()
+                    else None
+                ),
             )
         except OSError:
             injection = None
@@ -114,6 +122,10 @@ def register(ctx):
         )
         engine.save_lexicon(lexicon, _LEXICON_PATH)
         engine.save_stats(stats, _STATS_PATH)
+        # Session-Puffer (Task 3): Ergebnis für Folge-Injektionen merken
+        if result is not None:
+            _session_ctx.setdefault("tool_results", []).append(result)
+            _session_ctx["tool_results"] = _session_ctx["tool_results"][-3:]
         return
 
     def on_llm_response(
@@ -145,6 +157,8 @@ def register(ctx):
         )
         engine.save_lexicon(lexicon, _LEXICON_PATH)
         engine.save_stats(stats, _STATS_PATH)
+        # Session-Puffer (Task 3): letzte Antwort für Folge-Injektionen merken
+        _session_ctx["last_response"] = str(assistant_response)
         return
 
     ctx.register_hook("pre_llm_call", inject)
