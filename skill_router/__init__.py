@@ -29,6 +29,13 @@ _session_ctx: dict = {"current": None, "last_match": (), "fallback_shown": False
 def register(ctx):
     """Plugin entry point: wires the injection and learning hooks."""
 
+    def _df_generic() -> set[str] | None:
+        """Dynamische DF-Generik (Schritt 7) für die Lern-Hooks (mit Cache)."""
+        try:
+            return engine.cached_generic_words(engine.hermes_home() / "skills")
+        except OSError:
+            return None
+
     def inject(user_message: str, session_id: str, **kwargs):
         # Immer die aktuelle Message merken — die Entscheidungsphase, die das
         # Tool-Tracking (pre_tool_call) den Tool-Starts zuordnet.
@@ -91,7 +98,8 @@ def register(ctx):
         lexicon = engine.load_lexicon(_LEXICON_PATH)
         stats = engine.load_stats(_STATS_PATH)
         lexicon, stats = engine.record_tool_call(
-            message, tool_name, kwargs.get("args"), lexicon, stats
+            message, tool_name, kwargs.get("args"), lexicon, stats,
+            df_generic=_df_generic(),
         )
         lexicon = engine.prune_lexicon(lexicon, stats)
         engine.save_lexicon(lexicon, _LEXICON_PATH)
@@ -123,6 +131,7 @@ def register(ctx):
             lexicon,
             stats,
             args=kwargs.get("function_args") or kwargs.get("args"),
+            df_generic=_df_generic(),
         )
         engine.save_lexicon(lexicon, _LEXICON_PATH)
         engine.save_stats(stats, _STATS_PATH)
@@ -158,6 +167,7 @@ def register(ctx):
             conversation_history,
             lexicon,
             stats,
+            df_generic=_df_generic(),
         )
         engine.save_lexicon(lexicon, _LEXICON_PATH)
         engine.save_stats(stats, _STATS_PATH)

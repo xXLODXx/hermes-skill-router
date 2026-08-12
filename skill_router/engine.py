@@ -220,6 +220,7 @@ def record_tool_call(
     args: dict | None,
     lexicon: dict,
     stats: dict,
+    df_generic: set[str] | None = None,
 ) -> tuple[dict, dict]:
     """Tool-Start erfassen: Woerter der Entscheidungsphase (User-Message) mit dem
     gestarteten Tool assoziieren (Kookkurrenz). skill_view-Calls werden auf den
@@ -232,7 +233,7 @@ def record_tool_call(
     # `stats.setdefault(...)[k] = stats[k]...` (KeyError bei leerem stats).
     tools = stats.setdefault("tools", {})
     tools[target] = tools.get(target, 0) + 1
-    for w in learn_words(user_message, lexicon):
+    for w in learn_words(user_message, lexicon, df_generic):
         words = stats.setdefault("words", {})
         words[w] = words.get(w, 0) + 1
         entry = lexicon.setdefault(w, {})
@@ -299,6 +300,7 @@ def learn_from_result(
     lexicon: dict,
     stats: dict,
     args: dict | None = None,
+    df_generic: set[str] | None = None,
 ) -> tuple[dict, dict]:
     """Tool-Ergebnis (post_tool_call) als Lern-Eingabe verwenden.
 
@@ -321,14 +323,14 @@ def learn_from_result(
         if not fields:
             return lexicon, stats
         # User-Wörter (Entscheidungsphase) als Primärsignal 1x
-        user_words = learn_words(user_message, lexicon)
+        user_words = learn_words(user_message, lexicon, df_generic)
         # Ergebnis-Wörter je Feld mit Feld-Gewicht (body 1x=2, sonst 0.5x=1)
         for field, text in fields:
             weight = (
                 RESULT_BOOST_WEIGHT if field in RESULT_BOOST_FIELDS
                 else RESULT_WORD_WEIGHT
             )
-            result_words = learn_words(text, lexicon)
+            result_words = learn_words(text, lexicon, df_generic)
             if not result_words:
                 continue
             _lexicon_add(
@@ -402,6 +404,7 @@ def learn_from_response(
     conversation_history: object,
     lexicon: dict,
     stats: dict,
+    df_generic: set[str] | None = None,
 ) -> tuple[dict, dict]:
     """LLM-Antwort (post_llm_call) als Lern-Eingabe verwenden.
 
@@ -418,7 +421,7 @@ def learn_from_response(
     """
     try:
         response_text = str(assistant_response or "")[:RESPONSE_MAX_CHARS]
-        response_words = learn_words(response_text, lexicon)
+        response_words = learn_words(response_text, lexicon, df_generic)
         if not response_words:
             return lexicon, stats
         # Entscheidungs-Kontext: 'Option A' präzise über die History auflösen
@@ -429,9 +432,9 @@ def learn_from_response(
                     conversation_history, choice_m.group(1).casefold()
                 )
                 if history_text:
-                    response_words += learn_words(history_text, lexicon)
+                    response_words += learn_words(history_text, lexicon, df_generic)
         # Skills finden, die die User-Wörter dieser Aufgabe bereits kennen
-        user_words = learn_words(user_message, lexicon)
+        user_words = learn_words(user_message, lexicon, df_generic)
         target_skills: set[str] = set()
         for w in user_words:
             entry = lexicon.get(w)
@@ -614,6 +617,52 @@ def scan_skills(skills_dir: Path) -> list[dict]:
     return skills
 
 
+# ── Dynamische DF-Generik (Schritt 7) ───────────────────────────────────────
+# Statische STOPWORDS sind sprachspezifisch und manuell zu pflegen. Wörter,
+# die VIELE Skills beschreiben (hohe Dokumentfrequenz), sind keine Signale —
+# das gilt sprachunabhängig und selbstpflegend. Diese dynamische Generik
+# ergänzt die statische Liste beim Matching UND beim Lernen.
+GENERIC_DF_RATIO = 0.4  # Wort in >= 40% aller Skills = generisch (kein Signal)
+
+# Cache: Skill-Scan ist teuer, Skills ändern sich selten — einmal pro
+# SKILL.md-mtime-Bestand berechnen.
+_df_cache: dict = {"mtime": None, "words": frozenset()}
+
+
+def cached_generic_words(skills_dir: Path) -> set[str]:
+    """DF-Generik mit mtime-Cache (für Lern-Hooks; Matching nutzt den Scan)."""
+    try:
+        mtime = max(p.stat().st_mtime for p in skills_dir.rglob("SKILL.md"))
+    except OSError:
+        return set()
+    if _df_cache["mtime"] != mtime:
+        _df_cache["words"] = frozenset(generic_words(scan_skills(skills_dir)))
+        _df_cache["mtime"] = mtime
+    return set(_df_cache["words"])
+
+
+def generic_words(skills: list[dict]) -> set[str]:
+    """Wörter mit hoher Dokumentfrequenz über alle Skills.
+
+    Zählt jedes Wort aus Tags + Name + Kategorie + Description-Wörtern über
+    die Skill-Menge. Wörter, die >= GENERIC_DF_RATIO der Skills beschreiben,
+    unterscheiden nichts mehr -> generisch. Sprachunabhängig: Die DF ist
+    rein statistisch (ein deutsches Füllwort hat dieselbe DF wie ein englisches).
+    """
+    total = max(len(skills), 1)
+    counts: dict[str, int] = {}
+    for s in skills:
+        seen: set[str] = set()
+        for tag in s["tags"]:
+            seen |= _norm_words(tag)
+        seen |= _norm_words(s["name"])
+        seen |= _norm_words(s["cat"])
+        seen |= s["desc_words"]
+        for w in seen:
+            counts[w] = counts.get(w, 0) + 1
+    return {w for w, c in counts.items() if c / total >= GENERIC_DF_RATIO}
+
+
 # ── Matching ─────────────────────────────────────────────────────────────────
 
 def _norm_words(text: str) -> set[str]:
@@ -651,7 +700,11 @@ MAX_LEARN_WORDS = 5                                   # max keywords per learnin
 MAX_LEARN_MESSAGE_WORDS = 40                          # longer messages = context, not learned
 
 
-def learn_words(user_message: str, lexicon: dict | None = None) -> list[str]:
+def learn_words(
+    user_message: str,
+    lexicon: dict | None = None,
+    df_generic: set[str] | None = None,
+) -> list[str]:
     """Task keywords for learning — in message order, hardened.
 
     - Only from SHORT messages (<= 40 words): long messages carry context
@@ -659,6 +712,8 @@ def learn_words(user_message: str, lexicon: dict | None = None) -> list[str]:
     - IDs, hashes, task IDs (t_...) are never learned.
     - Words already associated with >= GENERIC_SKILL_THRESHOLD skills are
       skipped (generic vocabulary, e.g. from mass skill-load sessions).
+    - Words with high document frequency across skills (df_generic, Schritt 7)
+      are skipped — they describe many skills and are no signal.
     - At most 5 keywords per event (the first relevant ones).
     """
     if len(user_message.split()) > MAX_LEARN_MESSAGE_WORDS:
@@ -670,6 +725,8 @@ def learn_words(user_message: str, lexicon: dict | None = None) -> list[str]:
             continue
         if _ID_PATTERN.match(w) or _TASK_ID_PATTERN.match(w):
             continue
+        if df_generic and w in df_generic:
+            continue  # DF-generisch — beschreibt viele Skills, kein Signal
         if lexicon:
             entry = lexicon.get(w)
             if entry and len(entry) >= GENERIC_SKILL_THRESHOLD:
@@ -680,7 +737,9 @@ def learn_words(user_message: str, lexicon: dict | None = None) -> list[str]:
     return result
 
 
-def context_words(extra_context: dict) -> set[str]:
+def context_words(
+    extra_context: dict, df_generic: set[str] | None = None
+) -> set[str]:
     """Match-Wörter aus dem Session-Puffer (Task 3).
 
     Extrahiert relevante Wörter aus ``tool_results`` (Liste von Tool-
@@ -692,10 +751,12 @@ def context_words(extra_context: dict) -> set[str]:
     words: set[str] = set()
     for result in extra_context.get("tool_results") or []:
         for _field, text in _result_text_fields(result):
-            words |= set(learn_words(text))
+            words |= set(learn_words(text, df_generic=df_generic))
     last_response = extra_context.get("last_response") or ""
     if last_response:
-        words |= set(learn_words(str(last_response)[:RESPONSE_MAX_CHARS]))
+        words |= set(
+            learn_words(str(last_response)[:RESPONSE_MAX_CHARS], df_generic=df_generic)
+        )
     return words
 
 
@@ -722,6 +783,9 @@ def build_injection(
         topics = parse_matrix(matrix_path.read_text(encoding="utf-8"))
     skills = scan_skills(skills_dir)
     lexicon = lexicon or {}
+    # Dynamische DF-Generik (Schritt 7): Wörter, die viele Skills beschreiben,
+    # sind keine Signale — sprachunabhängig, selbstpflegend.
+    df_generic = generic_words(skills)
 
     # Themen matchen
     topic_hits = []
@@ -746,10 +810,10 @@ def build_injection(
         hay |= _norm_words(s["name"])
         hay |= _norm_words(s["cat"])
         hay |= s["desc_words"]
-        score = len((words - STOPWORDS) & hay)
+        score = len((words - STOPWORDS - df_generic) & hay)
         # Gelernte Assoziationen: count als Gewicht
         for w in words & set(lexicon):
-            if len(lexicon[w]) >= GENERIC_SKILL_THRESHOLD:
+            if len(lexicon[w]) >= GENERIC_SKILL_THRESHOLD or w in df_generic:
                 continue  # generisches Wort — kein Gewicht
             count = lexicon[w].get(s["name"], 0)
             if count == 0:
