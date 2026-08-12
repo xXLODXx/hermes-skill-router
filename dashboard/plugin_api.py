@@ -234,14 +234,22 @@ def clusters() -> dict:
 def _cluster_items(
     lexicon: dict, stats: dict
 ) -> list[tuple[str, list[tuple[str, int]]]]:
-    """Alle (Tool, kausale Wörter)-Paare, sortiert nach Cluster-Größe."""
+    """Alle (Tool, kausal assoziierte Wörter)-Paare, sortiert nach Cluster-Größe.
+
+    Es zählen NUR Wörter mit Status 'kausal' — generische Wörter (>= 5
+    Skill-Assoziationen oder Lift < Schwelle) sind keine Signale und
+    verfälschen die Cluster-Ansicht.
+    """
     clusters_map: dict[str, list[tuple[str, int]]] = {}
     for w, assoc in lexicon.items():
         for t, co in assoc.items():
             if co < MIN_COOCCUR:
                 continue
             lv = lift(w, t, lexicon, stats)
-            if lv >= LIFT_THRESHOLD:
+            if (
+                lv >= LIFT_THRESHOLD
+                and word_status(w, lexicon, stats, t, lv, co) == "kausal"
+            ):
                 clusters_map.setdefault(t, []).append((w, co))
     return sorted(
         clusters_map.items(), key=lambda kv: -len(kv[1])
