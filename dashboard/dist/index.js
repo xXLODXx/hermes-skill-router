@@ -229,9 +229,52 @@
     );
   }
 
+  // ── Cluster-Ansicht (alle kausalen Cluster, Zeilen-Layout) ────────────────
+  // Zeile pro Skill: Skill-Box links, Wort-Chips rechts. Chip-Farbe = Status
+  // (kausal ✓ grün, generisch ✕ rot, beobachtet ! orange — gleiches Schema
+  // wie die Mindmap-Badges), Lift als Zahl im Chip.
+
+  function ClusterChip({ item }) {
+    const meta = STATUS_META[item.status] || STATUS_META.beobachtet;
+    return h("span", {
+      className: "sr-chip",
+      style: {
+        borderColor: meta.color,
+        color: meta.color,
+      },
+      title: item.word + " · Lift " + item.lift + " · " + meta.label,
+    },
+      meta.sym + " " + item.word + " (" + item.lift + ")"
+    );
+  }
+
+  function ClusterView({ clusters }) {
+    if (!clusters || clusters.length === 0) {
+      return h("div", { className: "sr-empty" },
+        "Noch keine kausalen Cluster — nach etwas Tool-Nutzung erscheinen hier alle Skills mit ihren kausal assoziierten Wörtern.");
+    }
+    return h("div", { className: "sr-clusters" },
+      clusters.map(function (c) {
+        return h("div", { className: "sr-cluster-row", key: c.tool },
+          h("div", { className: "sr-cluster-skill" },
+            h("span", { className: "sr-cluster-name" }, c.tool),
+            h("span", { className: "sr-cluster-count" }, c.count)
+          ),
+          h("div", { className: "sr-cluster-words" },
+            c.words.map(function (w) {
+              return h(ClusterChip, { item: w, key: w.word });
+            }),
+            c.more > 0 ? h("span", { className: "sr-cluster-more" }, "+" + c.more) : null
+          )
+        );
+      })
+    );
+  }
+
   function Page() {
     const [overview, setOverview] = useState(null);
     const [decision, setDecision] = useState(null);
+    const [clusters, setClusters] = useState(null);
     const [err, setErr] = useState(null);
 
     useEffect(function () {
@@ -240,6 +283,9 @@
         .catch(function (e) { setErr(String((e && e.message) || e)); });
       fetchJSON(API + "/decision")
         .then(setDecision)
+        .catch(function (e) { setErr(String((e && e.message) || e)); });
+      fetchJSON(API + "/clusters")
+        .then(setClusters)
         .catch(function (e) { setErr(String((e && e.message) || e)); });
     }, []);
 
@@ -267,6 +313,12 @@
         h(CardContent, null,
           h("h3", { className: "sr-section-title" }, "Funktionsweise: Task → Skill-Kandidaten (Pro/Contra)"),
           h(Mindmap, { decision: decision })
+        )
+      ),
+      h(Card, null,
+        h(CardContent, null,
+          h("h3", { className: "sr-section-title" }, "Cluster-Ansicht: alle Skills mit kausalen Wörtern"),
+          h(ClusterView, { clusters: clusters })
         )
       ),
       h(Card, null,

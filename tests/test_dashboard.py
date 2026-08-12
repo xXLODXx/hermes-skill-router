@@ -131,3 +131,20 @@ def test_decision_liefert_kandidaten(dashboard_env) -> None:
     assert flutter["status"] == "kausal"
     pro_words = [p["word"] for p in flutter["pro"]]
     assert "riverpod" in pro_words
+
+
+def test_clusters_liefert_alle_kausalen_cluster(dashboard_env) -> None:
+    """Cluster-Ansicht: alle kausalen Skills mit Wort-Status (kein Top-N-Limit)."""
+    api = dashboard_env
+    result = api.clusters()
+    assert result["total_calls"] == 30
+    # Fixture: riverpod->flutter-dev (co=4, Lift>2) UND kanban->kanban-skill
+    # (co=2, Lift=2.4) sind beide kausal -> beide Cluster erscheinen.
+    tools = [c["tool"] for c in result["clusters"]]
+    assert "flutter-dev" in tools
+    assert "kanban-skill" in tools  # co=2 + Lift 2.4 >= Schwelle -> kausal
+    flutter = next(c for c in result["clusters"] if c["tool"] == "flutter-dev")
+    assert flutter["count"] == 1
+    assert flutter["words"][0]["word"] == "riverpod"
+    assert flutter["words"][0]["status"] == "kausal"
+    assert flutter["words"][0]["lift"] >= 2.0

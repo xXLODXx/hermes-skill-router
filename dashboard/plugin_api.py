@@ -191,3 +191,58 @@ def decision() -> dict:
     }
     _cache_decision = result
     return result
+
+
+@router.get("/clusters")
+def clusters() -> dict:
+    """Cluster-Ansicht: alle kausalen Cluster (Skill -> Wörter mit Status).
+
+    Zeile pro Skill: die kausal assoziierten Wörter (Lift >= Schwelle) mit
+    ihrem Status (kausal/generisch/beobachtet — gleiche Semantik wie die
+    Wort-Tabelle und Mindmap), sortiert nach Cluster-Größe absteigend.
+    Skaliert auf ALLE Cluster (kein Top-N-Limit wie die Mindmap).
+    """
+    _invalidate_if_changed()
+    lexicon = _load_json(_LEXICON_PATH)
+    stats = _load_json(_STATS_PATH)
+
+    rows = []
+    for t, assoc in _cluster_items(lexicon, stats):
+        words = []
+        for w, co in assoc:
+            lv = lift(w, t, lexicon, stats)
+            words.append({
+                "word": w,
+                "lift": round(lv, 2),
+                "count": co,
+                "status": word_status(w, lexicon, stats, t, lv, co),
+            })
+        words.sort(key=lambda i: -i["lift"])
+        rows.append({
+            "tool": t,
+            "count": len(words),
+            "words": words[:12],  # Chips pro Zeile begrenzt, Rest via +N
+            "more": max(len(words) - 12, 0),
+        })
+
+    return {
+        "total_calls": stats.get("total_calls", 0),
+        "clusters": rows,
+    }
+
+
+def _cluster_items(
+    lexicon: dict, stats: dict
+) -> list[tuple[str, list[tuple[str, int]]]]:
+    """Alle (Tool, kausale Wörter)-Paare, sortiert nach Cluster-Größe."""
+    clusters_map: dict[str, list[tuple[str, int]]] = {}
+    for w, assoc in lexicon.items():
+        for t, co in assoc.items():
+            if co < MIN_COOCCUR:
+                continue
+            lv = lift(w, t, lexicon, stats)
+            if lv >= LIFT_THRESHOLD:
+                clusters_map.setdefault(t, []).append((w, co))
+    return sorted(
+        clusters_map.items(), key=lambda kv: -len(kv[1])
+    )
