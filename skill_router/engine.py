@@ -466,6 +466,36 @@ def lift(word: str, tool: str, lexicon: dict, stats: dict) -> float:
     return co / expected if expected > 0 else 0.0
 
 
+def word_status(
+    word: str,
+    lexicon: dict,
+    stats: dict,
+    best_tool: str | None = None,
+    best_lift: float = 0.0,
+    best_co: int = 0,
+) -> str:
+    """Anzeige-Status eines Wortes — EINE Quelle für Engine + Dashboard.
+
+    - "beobachtet": zu wenige Daten (total_calls < MIN_CALLS_FOR_LIFT) oder
+      1x-Zufall (co < MIN_COOCCUR)
+    - "kausal": Lift >= LIFT_THRESHOLD UND Support, UND das Wort ist nicht
+      generisch (weniger als GENERIC_SKILL_THRESHOLD Skill-Assoziationen —
+      die Engine behandelt es sonst beim Lernen/Matching als generisch)
+    - "generisch": Kookkurrenz ohne Kausalität (wird beim nächsten Prune
+      entfernt) oder zu viele Skill-Assoziationen
+    """
+    total_calls = stats.get("total_calls", 0)
+    if total_calls < MIN_CALLS_FOR_LIFT:
+        return "beobachtet"
+    if len(lexicon.get(word, {})) >= GENERIC_SKILL_THRESHOLD:
+        return "generisch"  # Engine behandelt es beim Lernen als generisch
+    if best_co >= MIN_COOCCUR and best_lift >= LIFT_THRESHOLD:
+        return "kausal"
+    if best_co >= MIN_COOCCUR:
+        return "generisch"  # beim nächsten Prune entfernt
+    return "beobachtet"
+
+
 def prune_lexicon(lexicon: dict, stats: dict) -> dict:
     """Nutzungsbasierte Bereinigung: Woerter ohne kausale Assoziation zu IRGENDEINEM
     Tool (bestes Lift < LIFT_THRESHOLD mit Minimum-Support) entfernen.

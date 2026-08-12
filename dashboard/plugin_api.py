@@ -5,9 +5,12 @@ system (auth via the dashboard session token, like all core API routes).
 
 Liest die beiden Lern-Dateien des Plugins (learned_keywords.json =
 Wort→Tool-Kookkurrenz, tool_stats.json = Marginalien) und berechnet daraus
-den Kausalitäts-Status jedes Wortes (Lift vs. Zufallserwartung) — dieselbe
-Logik wie die Engine (skill_router/engine.py), hier bewusst als kleine
-Duplikation für die read-only Anzeige.
+den Kausalitäts-Status jedes Wortes (Lift vs. Zufallserwartung).
+
+Seit Schritt 5 (Review-Plan): Die Lift-/Status-Logik kommt aus
+``skill_router.engine`` (eine Quelle — kein Drift mehr durch Duplikation).
+Ein mtime-basierter Cache verhindert Neuberechnung pro Request bei
+unverändertem Zustand (Overhead ≈ 0).
 """
 
 from __future__ import annotations
@@ -17,6 +20,15 @@ import logging
 from pathlib import Path
 
 from fastapi import APIRouter
+
+# Eine Quelle für Lift/Schwellen/Status — D3-Fix: keine Duplikation mehr.
+from skill_router.engine import (
+    LIFT_THRESHOLD,
+    MIN_CALLS_FOR_LIFT,
+    MIN_COOCCUR,
+    lift,
+    word_status,
+)
 
 log = logging.getLogger(__name__)
 router = APIRouter()
@@ -28,10 +40,10 @@ _PLUGIN_DIR = Path(__file__).resolve().parent.parent
 _LEXICON_PATH = _PLUGIN_DIR / "data" / "learned_keywords.json"
 _STATS_PATH = _PLUGIN_DIR / "data" / "tool_stats.json"
 
-# Konsistent mit engine.py — dupliziert für die Anzeige.
-_LIFT_THRESHOLD = 2.0
-_MIN_COOCCUR = 2
-_MIN_CALLS_FOR_LIFT = 25
+# mtime-Cache: nur bei Datei-Änderung neu berechnen (Overhead ≈ 0).
+_cache_mtime: tuple[float, float] | None = None
+_cache_overview: dict | None = None
+_cache_decision: dict | None = None
 
 
 def _load_json(path: Path) -> dict:
@@ -42,31 +54,31 @@ def _load_json(path: Path) -> dict:
         return {}
 
 
-def _lift(word: str, tool: str, lexicon: dict, stats: dict) -> float:
-    """Kausalitäts-Maß: beobachtete Kookkurrenz / Zufallserwartung."""
-    total = max(stats.get("total_calls", 0), 1)
-    wc = stats.get("words", {}).get(word, 0)
-    tc = stats.get("tools", {}).get(tool, 0)
-    co = lexicon.get(word, {}).get(tool, 0)
-    if co == 0 or wc == 0 or tc == 0:
-        return 0.0
-    expected = wc * tc / total
-    return co / expected if expected > 0 else 0.0
+def _data_mtime() -> tuple[float, float] | None:
+    """mtime-Paar der beiden Datendateien (None wenn nicht vorhanden)."""
+    try:
+        return (_LEXICON_PATH.stat().st_mtime, _STATS_PATH.stat().st_mtime)
+    except OSError:
+        return None
 
 
-def _word_status(lift_value: float, co: int, total_calls: int) -> str:
-    """kausal | generisch | beobachtet — je nach Lift, Support und Datenlage."""
-    if total_calls >= _MIN_CALLS_FOR_LIFT:
-        if co >= _MIN_COOCCUR and lift_value >= _LIFT_THRESHOLD:
-            return "kausal"
-        if co >= _MIN_COOCCUR:
-            return "generisch"  # beim nächsten Prune entfernt
-    return "beobachtet"  # zu wenige Daten oder 1x-Zufall
+def _invalidate_if_changed() -> None:
+    """Cache invalidieren, wenn sich die Datendateien geändert haben."""
+    global _cache_mtime, _cache_overview, _cache_decision
+    mtime = _data_mtime()
+    if mtime != _cache_mtime:
+        _cache_mtime = mtime
+        _cache_overview = None
+        _cache_decision = None
 
 
 @router.get("/overview")
 def overview() -> dict:
     """Kompakter Gesamtzustand: Marginalien + Wort-Tabelle mit Status."""
+    global _cache_overview
+    _invalidate_if_changed()
+    if _cache_overview is not None:
+        return _cache_overview
     lexicon = _load_json(_LEXICON_PATH)
     stats = _load_json(_STATS_PATH)
     total_calls = stats.get("total_calls", 0)
@@ -75,12 +87,12 @@ def overview() -> dict:
     for w, assoc in lexicon.items():
         best_tool, best_lift, best_co = "", 0.0, 0
         for t, co in assoc.items():
-            lv = _lift(w, t, lexicon, stats)
+            lv = lift(w, t, lexicon, stats)
             if lv > best_lift:
                 best_tool, best_lift, best_co = t, lv, co
         rows.append({
             "wort": w,
-            "status": _word_status(best_lift, best_co, total_calls),
+            "status": word_status(w, lexicon, stats, best_tool, best_lift, best_co),
             "lift": round(best_lift, 2),
             "count": sum(assoc.values()),
             "top_tool": best_tool,
@@ -88,27 +100,33 @@ def overview() -> dict:
         })
     rows.sort(key=lambda r: (-(r["status"] == "kausal"), -r["lift"]))
 
-    return {
+    result = {
         "total_calls": total_calls,
         "lexicon_size": len(lexicon),
         "words_tracked": len(stats.get("words", {})),
         "tools_tracked": len(stats.get("tools", {})),
-        "lift_active": total_calls >= _MIN_CALLS_FOR_LIFT,
+        "lift_active": total_calls >= MIN_CALLS_FOR_LIFT,
         "top_tools": sorted(
             stats.get("tools", {}).items(), key=lambda kv: -kv[1]
         )[:12],
         "words": rows[:200],
     }
+    _cache_overview = result
+    return result
 
 
 @router.get("/decision")
 def decision() -> dict:
     """Entscheidungs-Mindmap: Task -> Skill-Kandidaten mit Pro/Contra.
 
-    Zeigt die Funktionsweise des Kausalitäts-Matchings: Welche Skills sind
-    Kandidaten, welche Wörter sprechen dafür (Pro = kausal, Lift >= Schwelle)
-    und welche dagegen (Contra = Kookkurrenz ohne Kausalität, wird bereinigt).
+    Zeigt den LERN-Zustand: Welche Skills die meisten Kookkurrenzen haben,
+    welche Wörter dafür sprechen (Pro = kausal, Lift >= Schwelle) und welche
+    dagegen (Contra = Kookkurrenz ohne Kausalität, wird bereinigt).
     """
+    global _cache_decision
+    _invalidate_if_changed()
+    if _cache_decision is not None:
+        return _cache_decision
     lexicon = _load_json(_LEXICON_PATH)
     stats = _load_json(_STATS_PATH)
     total_calls = stats.get("total_calls", 0)
@@ -126,22 +144,22 @@ def decision() -> dict:
             co = assoc.get(t, 0)
             if co == 0:
                 continue
-            lv = _lift(w, t, lexicon, stats)
+            lv = lift(w, t, lexicon, stats)
             item = {"word": w, "count": co, "lift": round(lv, 2)}
-            if co >= _MIN_COOCCUR and lv >= _LIFT_THRESHOLD:
+            if word_status(w, lexicon, stats, t, lv, co) == "kausal":
                 pro.append(item)
             else:
                 contra.append(item)  # 1x-Zufall oder unter der Lift-Schwelle
             if (
-                total_calls >= _MIN_CALLS_FOR_LIFT
-                and co >= _MIN_COOCCUR
-                and lv < _LIFT_THRESHOLD
+                total_calls >= MIN_CALLS_FOR_LIFT
+                and co >= MIN_COOCCUR
+                and lv < LIFT_THRESHOLD
             ):
                 generic_words += 1
         pro.sort(key=lambda i: -i["lift"])
         contra.sort(key=lambda i: -i["count"])
 
-        if total_calls < _MIN_CALLS_FOR_LIFT:
+        if total_calls < MIN_CALLS_FOR_LIFT:
             status = "beobachtet"  # zu wenige Daten — Lift noch nicht belastbar
         elif pro:
             status = "kausal"
@@ -158,8 +176,10 @@ def decision() -> dict:
             "contra": contra[:4],
         })
 
-    return {
+    result = {
         "total_calls": total_calls,
         "generic_words": generic_words,
         "candidates": candidates,
     }
+    _cache_decision = result
+    return result
