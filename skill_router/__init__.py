@@ -118,7 +118,12 @@ def register(ctx):
         lexicon = engine.load_lexicon(_LEXICON_PATH)
         stats = engine.load_stats(_STATS_PATH)
         lexicon, stats = engine.learn_from_result(
-            message, function_name, result, lexicon, stats
+            message,
+            function_name,
+            result,
+            lexicon,
+            stats,
+            args=kwargs.get("function_args") or kwargs.get("args"),
         )
         engine.save_lexicon(lexicon, _LEXICON_PATH)
         engine.save_stats(stats, _STATS_PATH)

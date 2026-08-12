@@ -298,12 +298,16 @@ def learn_from_result(
     result: object,
     lexicon: dict,
     stats: dict,
+    args: dict | None = None,
 ) -> tuple[dict, dict]:
     """Tool-Ergebnis (post_tool_call) als Lern-Eingabe verwenden.
 
     Löst die Indirektions-Lücke: 'Schau ins Kanban und arbeite ab' — die
     finale Aufgabe steht im Tool-Ergebnis (Task-Body). Die Wörter des
     Ergebnisses werden mit dem Tool/Skill assoziiert, das sie lieferte.
+    skill_view-Calls werden auf den Skill-Namen gemappt (args['name']),
+    damit das Matching-Ziel (Skill) getroffen wird — konsistent mit
+    record_tool_call.
 
     Gewichtung (F2): Kanban-Body-Felder (``body``) 1x, sonstige Felder 0.5x.
     Der Tool-Call selbst zählt NICHT neu (total_calls unverändert — es war
@@ -311,7 +315,7 @@ def learn_from_result(
     """
     target = tool_name
     if tool_name in ("skill_view", "view_skill", "skills_view"):
-        target = (target or tool_name)
+        target = (args or {}).get("name") or tool_name
     try:
         fields = _result_text_fields(result)
         if not fields:

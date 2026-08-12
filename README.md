@@ -109,6 +109,33 @@ auto-suggested section.
   at any time to reset the learned associations.
 - The plugin performs **no telemetry and no network calls**.
 
+## Output learning (post_tool_call / post_llm_call) — opt-in
+
+By default the router learns only from the raw user message (decision phase).
+Two additional *follow-signal* sources are available behind a feature flag:
+
+- `post_tool_call`: technical keywords from tool results (e.g. a Kanban task
+  body) are associated with the skill that produced them — resolves indirect
+  tasks like *"check the kanban board and work through the tasks"*, where the
+  actual task lives in the tool result, not the user message.
+- `post_llm_call`: technical keywords from the assistant's reply reinforce the
+  skills already associated with this task's user words — resolves
+  *"yes, option A"* confirmations, where the real content is in the LLM output.
+
+Enable it (default **off**, deliberately conservative):
+
+```yaml
+# config.yaml
+skill_router:
+  output_learning: true
+```
+
+Both sources are hardened: field whitelist (`body`, `output`, `text`,
+`description`, `result`, `summary`), 500-char cap per field, failed tool
+statuses ignored, IDs/hashes never learned, and nothing is learned without an
+existing causal association (lift gate). The last 3 tool results and the last
+assistant reply also enrich follow-up injections in the same session.
+
 ## Development
 
 ```bash

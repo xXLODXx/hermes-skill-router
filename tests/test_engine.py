@@ -506,6 +506,26 @@ def test_learn_from_result_never_learns_ids(env):
     assert "riverpod" in lexicon
 
 
+def test_learn_from_result_maps_skill_view_to_skill_name(env):
+    """Task-4-Fix: skill_view-Ergebnisse landen unter dem SKILL-NAMEN,
+    nicht unter dem Tool-Namen 'skill_view' (No-Op-Bug in Zeile 308)."""
+    lexicon, stats = {}, engine.empty_stats()
+    result = '{"body": "Riverpod Screen mit go_router bauen"}'
+    lexicon, stats = engine.learn_from_result(
+        user_message="emulator testen",
+        tool_name="skill_view",
+        result=result,
+        lexicon=lexicon,
+        stats=stats,
+        args={"name": "flutter-dev"},
+    )
+    # Ergebnis-Wörter assoziiert mit dem Skill-Namen
+    assert "riverpod" in lexicon
+    assert lexicon["riverpod"].get("flutter-dev", 0) >= 1
+    # NICHT unter dem Tool-Namen 'skill_view' gespeichert
+    assert "skill_view" not in lexicon.get("riverpod", {})
+
+
 def test_output_learning_flag_default_off(tmp_path, monkeypatch):
     """F1: Feature-Flag Default aus — ohne config.yaml und ohne env kein Lernen."""
     monkeypatch.delenv("SKILL_ROUTER_OUTPUT_LEARNING", raising=False)
