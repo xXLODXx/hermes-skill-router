@@ -8,3 +8,6 @@ build/
 # Learned associations can contain words from user messages — never commit.
 learned_keywords.json
 *.json.tmp
+
+# Plugin-Lern-/Laufzeitdaten (persoenliche Woerter aus User-Messages) — nie committen.
+data/
