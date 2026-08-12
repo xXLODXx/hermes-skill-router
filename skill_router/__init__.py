@@ -91,5 +91,31 @@ def register(ctx):
         engine.save_stats(stats, _STATS_PATH)
         return None
 
+    def on_tool_result(function_name: str, result: object, **kwargs):
+        """Tool-Ergebnis als Lern-Eingabe (post_tool_call, Output-Lernen).
+
+        Löst die Indirektions-Lücke (Kanban-Task-Body): Wörter des
+        Tool-Ergebnisses werden mit dem Skill assoziiert, der sie lieferte.
+        Nur aktiv, wenn das Feature-Flag output_learning gesetzt ist
+        (config.yaml, Default aus). Observer: blockt nie.
+        """
+        if not engine.output_learning_enabled():
+            return
+        ctx_ = _session_ctx.get("current")
+        if not ctx_:
+            return
+        message = ctx_.get("message", "")
+        if not function_name:
+            return
+        lexicon = engine.load_lexicon(_LEXICON_PATH)
+        stats = engine.load_stats(_STATS_PATH)
+        lexicon, stats = engine.learn_from_result(
+            message, function_name, result, lexicon, stats
+        )
+        engine.save_lexicon(lexicon, _LEXICON_PATH)
+        engine.save_stats(stats, _STATS_PATH)
+        return
+
     ctx.register_hook("pre_llm_call", inject)
     ctx.register_hook("pre_tool_call", on_tool)
+    ctx.register_hook("post_tool_call", on_tool_result)

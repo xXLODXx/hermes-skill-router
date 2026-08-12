@@ -41,6 +41,21 @@ THREE_LETTER_WORDS = frozenset({
     "gpu", "cpu", "ram", "vm", "ui", "dns", "tls", "cli", "sdk",
 })
 
+# ── Output-Lernen (post_tool_call / post_llm_call) ──────────────────────────
+# Tool-Ergebnisse und LLM-Antworten sind FOLGE-Signale: Sie werden nur als
+# Lern-Eingaben verwendet (assoziiert mit der User-Message, die sie auslöste),
+# nie als Direkt-Match der aktuellen Injektion. Feature-Flag output_learning
+# (config.yaml, Default aus) schaltet die neuen Quellen frei.
+RESULT_TEXT_FIELDS = frozenset({
+    "body", "output", "text", "description", "result", "summary",
+})
+RESULT_BOOST_FIELDS = frozenset({"body"})  # F2: Kanban-Task-Body 1x-Gewicht
+RESULT_MAX_CHARS = 500          # Größen-Deckel je Feld
+RESULT_IGNORE_STATUSES = frozenset({"error", "failed", "cancelled"})
+RESULT_WORD_WEIGHT = 1          # Folge-Signal: 0.5x entspricht Count +1
+RESULT_BOOST_WEIGHT = 2         # Kanban-Body (1x): doppeltes Gewicht
+MAX_RESULT_WORDS = 12           # max. gelernte Wörter je Tool-Ergebnis
+
 # Woerter >= 4 Zeichen ODER Whitelist-3er als ganze Woerter (Reihenfolge erhalten).
 _WORD_PATTERN = re.compile(
     r"[a-zäöüß0-9]{4,}"
@@ -109,6 +124,35 @@ def default_matrix_path(home: Path | None = None) -> Path | None:
     if DEFAULT_MATRIX_REL:
         return (home or hermes_home()) / DEFAULT_MATRIX_REL
     return None
+
+
+# ── Feature-Flag: Output-Lernen (F1) ─────────────────────────────────────────
+# config.yaml: skill_router.output_learning (Default false). Env-Override
+# SKILL_ROUTER_OUTPUT_LEARNING für Tests/CI. Konservativ: erst nach
+# Beobachtung freischalten (SoK-Warnung: selbst-generiertes Lernen kann
+# degradieren).
+
+def output_learning_enabled() -> bool:
+    """True, wenn das Output-Lernen (post_tool_call/post_llm_call) aktiv ist."""
+    env = os.environ.get("SKILL_ROUTER_OUTPUT_LEARNING")
+    if env is not None:
+        return env.strip().lower() in {"1", "true", "yes", "on"}
+    try:
+        config_path = hermes_home() / "config.yaml"
+        if not config_path.is_file():
+            return False
+        text = config_path.read_text(encoding="utf-8")
+        # Schlankes YAML-Scannen ohne PyYAML-Abhängigkeit in der Engine:
+        # skill_router: … output_learning: true
+        m = re.search(
+            r"skill_router\s*:\s*\n(?:[ \t].*\n)*?[ \t]+output_learning\s*:\s*(\S+)",
+            text,
+        )
+        if not m:
+            return False
+        return m.group(1).strip().lower() in {"true", "yes", "on", "1"}
+    except OSError:
+        return False
 
 
 # ── Persistenz: Lern-Lexikon ─────────────────────────────────────────────────
@@ -193,6 +237,104 @@ def record_tool_call(
         words[w] = words.get(w, 0) + 1
         entry = lexicon.setdefault(w, {})
         entry[target] = entry.get(target, 0) + 1
+    return lexicon, stats
+
+
+def _result_text_fields(result: object) -> list[tuple[str, str]]:
+    """Text-Felder eines Tool-Ergebnisses defensiv extrahieren.
+
+    JSON-Objekte (dict ODER JSON-String): nur Felder aus RESULT_TEXT_FIELDS,
+    je Feld auf RESULT_MAX_CHARS gekürzt. Plaintext/Listen: als Ganzes
+    behandeln. Fehler-Status (RESULT_IGNORE_STATUSES) → leere Liste
+    (Rauschen).
+    """
+    if result is None:
+        return []
+    if isinstance(result, str):
+        stripped = result.strip()
+        if stripped.startswith(("{", "[")):
+            try:
+                parsed = json.loads(stripped)
+            except json.JSONDecodeError:
+                parsed = None
+            if isinstance(parsed, (dict, list)):
+                result = parsed
+    if isinstance(result, dict):
+        status = str(result.get("status", "") or "").casefold()
+        if status in RESULT_IGNORE_STATUSES:
+            return []
+        fields = []
+        for key in RESULT_TEXT_FIELDS:
+            value = result.get(key)
+            if value is None:
+                continue
+            if isinstance(value, (list, tuple)):
+                value = " ".join(str(v) for v in value)
+            if not isinstance(value, str):
+                value = str(value)
+            if value.strip():
+                fields.append((key, value[:RESULT_MAX_CHARS]))
+        return fields
+    if isinstance(result, (list, tuple)):
+        text = " ".join(str(v) for v in result)
+        return [("output", text[:RESULT_MAX_CHARS])] if text.strip() else []
+    text = str(result)
+    return [("output", text[:RESULT_MAX_CHARS])] if text.strip() else []
+
+
+def _lexicon_add(
+    lexicon: dict, stats: dict, target: str, words: list[str], weight: int
+) -> None:
+    """Wörter mit Gewicht assoziieren (weight = ganzzahlige Zähler)."""
+    for w in words:
+        stats.setdefault("words", {})[w] = stats.get("words", {}).get(w, 0) + 1
+        entry = lexicon.setdefault(w, {})
+        entry[target] = entry.get(target, 0) + weight
+
+
+def learn_from_result(
+    user_message: str,
+    tool_name: str,
+    result: object,
+    lexicon: dict,
+    stats: dict,
+) -> tuple[dict, dict]:
+    """Tool-Ergebnis (post_tool_call) als Lern-Eingabe verwenden.
+
+    Löst die Indirektions-Lücke: 'Schau ins Kanban und arbeite ab' — die
+    finale Aufgabe steht im Tool-Ergebnis (Task-Body). Die Wörter des
+    Ergebnisses werden mit dem Tool/Skill assoziiert, das sie lieferte.
+
+    Gewichtung (F2): Kanban-Body-Felder (``body``) 1x, sonstige Felder 0.5x.
+    Der Tool-Call selbst zählt NICHT neu (total_calls unverändert — es war
+    kein neuer Call, nur ein Ergebnis). Observer: wirft nie.
+    """
+    target = tool_name
+    if tool_name in ("skill_view", "view_skill", "skills_view"):
+        target = (target or tool_name)
+    try:
+        fields = _result_text_fields(result)
+        if not fields:
+            return lexicon, stats
+        # User-Wörter (Entscheidungsphase) als Primärsignal 1x
+        user_words = learn_words(user_message, lexicon)
+        # Ergebnis-Wörter je Feld mit Feld-Gewicht (body 1x=2, sonst 0.5x=1)
+        for field, text in fields:
+            weight = (
+                RESULT_BOOST_WEIGHT if field in RESULT_BOOST_FIELDS
+                else RESULT_WORD_WEIGHT
+            )
+            result_words = learn_words(text, lexicon)
+            if not result_words:
+                continue
+            _lexicon_add(
+                lexicon, stats, target,
+                result_words[:MAX_RESULT_WORDS], weight,
+            )
+        # User-Wörter ergänzen (1x)
+        _lexicon_add(lexicon, stats, target, user_words, 1)
+    except Exception:  # noqa: S110, BLE001 — Observer: niemals den Agent-Loop brechen
+        pass
     return lexicon, stats
 
 

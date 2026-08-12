@@ -415,3 +415,127 @@ def test_fallback_hint_is_short():
 def test_matrix_optional_default(env, monkeypatch):
     monkeypatch.delenv("SKILL_ROUTER_MATRIX_PATH", raising=False)
     assert engine.default_matrix_path() is None
+
+
+# ── Output-Lernen (post_tool_call) — Task 1 ────────────────────────────────
+
+def test_learn_from_result_associates_body_words(env):
+    """Kanban-Task-Body im Tool-Ergebnis trainiert die Skill-Assoziation.
+
+    'Schau ins Kanban und arbeite ab' ist indirekt — die finale Aufgabe steht
+    im Task-Body. Die Body-Wörter müssen mit dem Tool (Skill) verknüpft werden.
+    """
+    lexicon, stats = {}, engine.empty_stats()
+    result = '{"body": "Login-Screen implementieren mit Riverpod und go_router"}'
+    lexicon, stats = engine.learn_from_result(
+        user_message="schau ins kanban und arbeite ab",
+        tool_name="terminal",
+        result=result,
+        lexicon=lexicon,
+        stats=stats,
+    )
+    # Body-Fachwörter gelernt (Kanban-Boost 1x)
+    assert "riverpod" in lexicon
+    assert "router" in lexicon
+    # User-Wort ebenfalls assoziiert
+    assert "kanban" in lexicon
+
+
+def test_learn_from_result_kanban_body_gets_full_weight(env):
+    """F2: Kanban-Body-Felder (body) zählen 1x, sonstige Felder 0.5x.
+
+    Der Boost ist über die Counts sichtbar: body-Wörter haben höhere Counts
+    als generic-Feld-Wörter bei gleicher Häufigkeit.
+    """
+    lexicon, stats = {}, engine.empty_stats()
+    result = '{"body": "riverpod refactor", "output": "riverpod version 3"}'
+    lexicon, stats = engine.learn_from_result(
+        user_message="mach weiter", tool_name="terminal",
+        result=result, lexicon=lexicon, stats=stats,
+    )
+    body_count = lexicon["riverpod"]["terminal"]
+    output_count = lexicon["version"]["terminal"]
+    assert body_count > output_count  # 1x vs 0.5x
+
+
+def test_learn_from_result_ignores_failed_status(env):
+    """Fehler-Ergebnisse sind Rauschen — nichts lernen."""
+    lexicon, stats = {}, engine.empty_stats()
+    result = '{"status": "error", "error_message": "timeout riverpod build"}'
+    lexicon, stats = engine.learn_from_result(
+        user_message="baue die app", tool_name="terminal",
+        result=result, lexicon=lexicon, stats=stats,
+    )
+    assert "timeout" not in lexicon
+    assert "riverpod" not in lexicon
+
+
+def test_learn_from_result_caps_huge_output(env):
+    """Riesen-Outputs (stdout-Monster) dürfen das Lexikon nicht fluten."""
+    lexicon, stats = {}, engine.empty_stats()
+    huge = "".join(f"filler{i} " for i in range(5000))
+    result = f'{{"output": "{huge[:2000]}"}}'
+    lexicon, stats = engine.learn_from_result(
+        user_message="kurz", tool_name="terminal",
+        result=result, lexicon=lexicon, stats=stats,
+    )
+    assert len(lexicon) < 50  # Deckel greift
+
+
+def test_learn_from_result_plaintext_fallback(env):
+    """Plaintext-Ergebnisse (kein JSON) werden als Text gelernt."""
+    lexicon, stats = {}, engine.empty_stats()
+    result = "document scan completed: ocr extracted 3 pages"
+    lexicon, stats = engine.learn_from_result(
+        user_message="scan das dokument", tool_name="skill_view",
+        result=result, lexicon=lexicon, stats=stats,
+    )
+    assert "document" in lexicon or "scan" in lexicon or "ocr" in lexicon
+
+
+def test_learn_from_result_never_learns_ids(env):
+    """Task-IDs/Hashes aus Tool-Ergebnissen nie lernen (Privacy)."""
+    lexicon, stats = {}, engine.empty_stats()
+    task_id = "t_" + "a1b2c3d4"
+    result = f'{{"body": "aufgabe {task_id}: riverpod einbauen"}}'
+    lexicon, stats = engine.learn_from_result(
+        user_message="kanban abarbeiten", tool_name="terminal",
+        result=result, lexicon=lexicon, stats=stats,
+    )
+    assert task_id not in lexicon
+    assert "riverpod" in lexicon
+
+
+def test_output_learning_flag_default_off(tmp_path, monkeypatch):
+    """F1: Feature-Flag Default aus — ohne config.yaml und ohne env kein Lernen."""
+    monkeypatch.delenv("SKILL_ROUTER_OUTPUT_LEARNING", raising=False)
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    assert engine.output_learning_enabled() is False
+
+
+def test_output_learning_flag_env_override(tmp_path, monkeypatch):
+    """Env-Override schaltet das Flag ein (Tests/CI)."""
+    monkeypatch.setenv("SKILL_ROUTER_OUTPUT_LEARNING", "1")
+    assert engine.output_learning_enabled() is True
+
+
+def test_output_learning_flag_config_yaml(tmp_path, monkeypatch):
+    """config.yaml: skill_router.output_learning: true aktiviert das Lernen."""
+    monkeypatch.delenv("SKILL_ROUTER_OUTPUT_LEARNING", raising=False)
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    (tmp_path / "config.yaml").write_text(
+        "model:\n  default: x\nskill_router:\n  output_learning: true\n",
+        encoding="utf-8",
+    )
+    assert engine.output_learning_enabled() is True
+
+
+def test_output_learning_flag_config_false(tmp_path, monkeypatch):
+    """config.yaml mit false → deaktiviert."""
+    monkeypatch.delenv("SKILL_ROUTER_OUTPUT_LEARNING", raising=False)
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    (tmp_path / "config.yaml").write_text(
+        "skill_router:\n  output_learning: false\n",
+        encoding="utf-8",
+    )
+    assert engine.output_learning_enabled() is False
