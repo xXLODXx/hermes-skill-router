@@ -1,6 +1,5 @@
 """Tests for the skill-router engine — isolated, fixture-based, no network."""
 
-import os
 from pathlib import Path
 
 import pytest

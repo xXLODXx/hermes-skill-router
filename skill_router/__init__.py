@@ -14,7 +14,6 @@ Requires nothing beyond a stock Hermes install. All paths resolve against
 ``HERMES_HOME``; the routing matrix is optional (see README).
 """
 
-import os
 import re
 from pathlib import Path
 
@@ -85,10 +84,10 @@ def register(ctx):
         nutzungsbasierte Bereinigung. Observer: blockt nie."""
         ctx_ = _session_ctx.get("current")
         if not ctx_ or not tool_name:
-            return None
+            return
         message = ctx_.get("message", "")
         if not message:
-            return None
+            return
         lexicon = engine.load_lexicon(_LEXICON_PATH)
         stats = engine.load_stats(_STATS_PATH)
         lexicon, stats = engine.record_tool_call(
@@ -97,7 +96,7 @@ def register(ctx):
         lexicon = engine.prune_lexicon(lexicon, stats)
         engine.save_lexicon(lexicon, _LEXICON_PATH)
         engine.save_stats(stats, _STATS_PATH)
-        return None
+        return
 
     def on_tool_result(function_name: str, result: object, **kwargs):
         """Tool-Ergebnis als Lern-Eingabe (post_tool_call, Output-Lernen).

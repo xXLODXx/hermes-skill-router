@@ -72,7 +72,7 @@ STOPWORDS = {
     "then", "them", "they", "their", "there", "here", "also", "only", "very",
     "just", "like", "make", "made", "want", "need", "help", "nice", "good",
     "gerne", "bitte", "danke", "sagen", "machen", "gehen", "kommen", "haben",
-    "sein", "einer", "eines", "etwas", "immer", "noch", "schon", "auch", "aber",
+    "sein", "eines", "etwas", "immer", "noch", "schon", "auch", "aber",
     "hermes", "aufgaben", "aufgabe", "offene", "offen", "gibt", "gegen", "über",
     "nochmal", "gerade", "einfach", "vielleicht", "frage", "fragen", "diese",
     "diesen", "dieser", "soll", "sollte", "kannst", "können", "würde", "wird",
@@ -514,9 +514,9 @@ def cluster_bonus(words: set[str], tool: str, lexicon: dict, stats: dict) -> int
 
 def parse_matrix(text: str) -> list[dict]:
     """Themen mit Keywords + Pflicht/Optional-Skills aus der Matrix extrahieren."""
-    topics = []
+    topics: list[dict] = []
     lines = text.splitlines()
-    current = None
+    current: dict | None = None
     for line in lines:
         m = re.match(r"^## Thema \d+:\s*(.+)$", line.strip())
         if m:
@@ -540,7 +540,7 @@ def parse_matrix(text: str) -> list[dict]:
 
 def _desc_words(desc: str, limit: int = 20) -> set[str]:
     """Relevante Wörter der Skill-Description als zusätzliche Suchfläche."""
-    words = set()
+    words: set[str] = set()
     for w in re.findall(r"[a-zäöüß]{4,}", desc.lower()):
         if w not in STOPWORDS and len(words) < limit:
             words.add(w)
@@ -563,17 +563,17 @@ def scan_skills(skills_dir: Path) -> list[dict]:
                 txt = md.read_text(encoding="utf-8", errors="replace")
             except OSError:
                 continue
-            m = re.search(r"^name:\s*[\"']?([^\"'\n]+)", txt, re.M)
+            m = re.search(r"^name:\s*[\"']?([^\"'\n]+)", txt, re.MULTILINE)
             name = m.group(1).strip() if m else skill_dir.name
             tags = []
             m2 = re.search(r"hermes:\s*\n\s*tags:\s*\[([^\]]*)\]", txt)
             if m2:
                 tags = [t.strip().strip("'\"") for t in m2.group(1).split(",")]
             else:
-                m3 = re.search(r"^tags:\s*\[([^\]]*)\]", txt, re.M)
+                m3 = re.search(r"^tags:\s*\[([^\]]*)\]", txt, re.MULTILINE)
                 if m3:
                     tags = [t.strip().strip("'\"") for t in m3.group(1).split(",")]
-            m4 = re.search(r"^description:\s*[\"']?([^\"'\n]+)", txt, re.M)
+            m4 = re.search(r"^description:\s*[\"']?([^\"'\n]+)", txt, re.MULTILINE)
             desc = m4.group(1).strip() if m4 else ""
             skills.append({
                 "cat": cat_dir.name,
@@ -724,9 +724,12 @@ def build_injection(
             count = lexicon[w].get(s["name"], 0)
             if count == 0:
                 continue
-            if stats and stats.get("total_calls", 0) >= MIN_CALLS_FOR_LIFT:
-                if count < MIN_COOCCUR or lift(w, s["name"], lexicon, stats) < LIFT_THRESHOLD:
-                    continue  # Frequenz ohne Kausalitaet zaehlt nicht
+            if (
+                stats
+                and stats.get("total_calls", 0) >= MIN_CALLS_FOR_LIFT
+                and (count < MIN_COOCCUR or lift(w, s["name"], lexicon, stats) < LIFT_THRESHOLD)
+            ):
+                continue  # Frequenz ohne Kausalitaet zaehlt nicht
             score += count
         if stats and stats.get("total_calls", 0) >= MIN_CALLS_FOR_LIFT:
             score += cluster_bonus(words, s["name"], lexicon, stats)
@@ -770,7 +773,7 @@ def match_signature(injection: str | None) -> tuple:
     """Kompakte Signatur des injizierten Match-Sets (Themen + Skills)."""
     if not injection:
         return ()
-    topics = tuple(sorted(re.findall(r"^- ([A-Za-zäöüÄÖÜ0-9 /-]+?) \(Match", injection, re.M)))
+    topics = tuple(sorted(re.findall(r"^- ([A-Za-zäöüÄÖÜ0-9 /-]+?) \(Match", injection, re.MULTILINE)))
     skills = tuple(sorted(re.findall(r"-\s+(?:Pflicht|Required|Optional): ([^\n]+)", injection)))
     return topics + skills
 

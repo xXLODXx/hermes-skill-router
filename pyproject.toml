@@ -18,3 +18,16 @@ packages = ["skill_router"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.ruff.lint]
+# N999: Der Repo-Ordnername enthält einen Bindestrich (hermes-skill-router) —
+# Root-Wrapper und Paket-__init__ sind deshalb formal keine gültigen Modul-Namen.
+# Für Plugin-Repos Standard: per-file-ignore statt Umbenennung.
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["N999"]
+"*/__init__.py" = ["N999"]
+
+[tool.mypy]
+# Root-Wrapper (Plugin-Einstieg) ist kein validierbares Paketmodul —
+# mypy direkt auf das skill_router-Paket richten (nicht auf das Repo-Root).
+files = ["skill_router"]

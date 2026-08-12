@@ -42,7 +42,8 @@ def main() -> int:
             problems.append(f"{f}: Lern-Datei darf nie committet werden")
             continue
         try:
-            content = open(f, encoding="utf-8", errors="replace").read()
+            with open(f, encoding="utf-8", errors="replace") as fh:
+                content = fh.read()
         except OSError:
             continue
         for pattern, label in PATTERNS:
