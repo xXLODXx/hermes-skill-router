@@ -249,12 +249,13 @@
   }
 
   function ClusterView({ clusters }) {
-    if (!clusters || clusters.length === 0) {
+    const list = Array.isArray(clusters) ? clusters : [];
+    if (list.length === 0) {
       return h("div", { className: "sr-empty" },
         "Noch keine kausalen Cluster — nach etwas Tool-Nutzung erscheinen hier alle Skills mit ihren kausal assoziierten Wörtern.");
     }
     return h("div", { className: "sr-clusters" },
-      clusters.map(function (c) {
+      list.map(function (c) {
         return h("div", { className: "sr-cluster-row", key: c.tool },
           h("div", { className: "sr-cluster-skill" },
             h("span", { className: "sr-cluster-name" }, c.tool),
@@ -285,7 +286,7 @@
         .then(setDecision)
         .catch(function (e) { setErr(String((e && e.message) || e)); });
       fetchJSON(API + "/clusters")
-        .then(setClusters)
+        .then(function (d) { setClusters(d && d.clusters); })
         .catch(function (e) { setErr(String((e && e.message) || e)); });
     }, []);
 
