@@ -31,6 +31,7 @@ if str(_PLUGIN_DIR) not in sys.path:
     sys.path.insert(0, str(_PLUGIN_DIR))
 
 # Eine Quelle für Lift/Schwellen/Status — D3-Fix: keine Duplikation mehr.
+from skill_router import engine
 from skill_router.engine import (
     LIFT_THRESHOLD,
     MIN_CALLS_FOR_LIFT,
@@ -195,19 +196,22 @@ def decision() -> dict:
 
 @router.get("/clusters")
 def clusters() -> dict:
-    """Cluster-Ansicht: alle kausalen Cluster (Skill -> Wörter mit Status).
+    """Cluster-Ansicht: ALLE Skills, dynamisch ergänzt.
 
-    Zeile pro Skill: die kausal assoziierten Wörter (Lift >= Schwelle) mit
-    ihrem Status (kausal/generisch/beobachtet — gleiche Semantik wie die
-    Wort-Tabelle und Mindmap), sortiert nach Cluster-Größe absteigend.
-    Skaliert auf ALLE Cluster (kein Top-N-Limit wie die Mindmap).
+    Zeile pro Skill: Skills mit kausalen Assoziationen zuerst (Wörter mit
+    Status 'kausal', sortiert nach Cluster-Größe), danach alle übrigen
+    installierten Skills ohne Lern-Daten (leere Zeile, erscheint nach
+    erster Nutzung). Kein Top-N-Limit — neue Skills tauchen automatisch
+    auf, sobald sie im System existieren.
     """
     _invalidate_if_changed()
     lexicon = _load_json(_LEXICON_PATH)
     stats = _load_json(_STATS_PATH)
 
     rows = []
+    seen: set[str] = set()
     for t, assoc in _cluster_items(lexicon, stats):
+        seen.add(t)
         words = []
         for w, co in assoc:
             lv = lift(w, t, lexicon, stats)
@@ -225,8 +229,24 @@ def clusters() -> dict:
             "more": max(len(words) - 12, 0),
         })
 
+    # Alle übrigen installierten Skills ergänzen (noch ohne kausale Daten)
+    try:
+        all_skills = engine.scan_skills(engine.hermes_home() / "skills")
+    except OSError:
+        all_skills = []
+    for s in all_skills:
+        if s["name"] in seen:
+            continue
+        rows.append({
+            "tool": s["name"],
+            "count": 0,
+            "words": [],
+            "more": 0,
+        })
+
     return {
         "total_calls": stats.get("total_calls", 0),
+        "total_skills": len(all_skills),
         "clusters": rows,
     }
 

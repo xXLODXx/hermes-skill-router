@@ -80,6 +80,21 @@ def dashboard_env(tmp_path: Path, monkeypatch) -> dict:
         }),
         encoding="utf-8",
     )
+    # Mini-Skills-Verzeichnis für die dynamische Ergänzung (Option live):
+    # zwei zusätzliche Skills ohne Lern-Daten + einer, der dem Fixture-
+    # Tool entspricht (flutter-dev) — testet, dass alle erscheinen.
+    skills_root = tmp_path / "skills"
+    for cat, skills in {
+        "software-development": ["flutter-dev", "kanban-skill"],
+        "email": ["dummy-skill"],
+    }.items():
+        for s in skills:
+            d = skills_root / cat / s
+            d.mkdir(parents=True, exist_ok=True)
+            (d / "SKILL.md").write_text(
+                f"---\nname: {s}\ndescription: Test-Skill {s}\n---\n",
+                encoding="utf-8",
+            )
     import dashboard.plugin_api as api
 
     api._LEXICON_PATH = data_dir / "learned_keywords.json"
@@ -134,7 +149,7 @@ def test_decision_liefert_kandidaten(dashboard_env) -> None:
 
 
 def test_clusters_liefert_alle_kausalen_cluster(dashboard_env) -> None:
-    """Cluster-Ansicht: alle kausalen Skills mit Wort-Status (kein Top-N-Limit)."""
+    """Cluster-Ansicht: kausale Cluster + ALLE Skills dynamisch ergänzt."""
     api = dashboard_env
     result = api.clusters()
     assert result["total_calls"] == 30
@@ -148,6 +163,14 @@ def test_clusters_liefert_alle_kausalen_cluster(dashboard_env) -> None:
     assert flutter["words"][0]["word"] == "riverpod"
     assert flutter["words"][0]["status"] == "kausal"
     assert flutter["words"][0]["lift"] >= 2.0
+    # Dynamische Ergänzung: alle installierten Skills sind enthalten
+    # (kausale zuerst, dann die ohne Lern-Daten mit count=0)
+    assert len(result["clusters"]) == result["total_skills"]
+    assert result["total_skills"] == 3  # 3 Mini-Skills im Fixture
+    empty = [c for c in result["clusters"] if c["count"] == 0]
+    assert len(empty) == 1  # dummy-skill ohne Lern-Daten ist dabei
+    assert empty[0]["tool"] == "dummy-skill"
+    assert empty[0]["words"] == []
 
 
 def test_last_injection_ohne_datei(dashboard_env) -> None:

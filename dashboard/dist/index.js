@@ -252,21 +252,25 @@
     const list = Array.isArray(clusters) ? clusters : [];
     if (list.length === 0) {
       return h("div", { className: "sr-empty" },
-        "Noch keine kausalen Cluster — nach etwas Tool-Nutzung erscheinen hier alle Skills mit ihren kausal assoziierten Wörtern.");
+        "Noch keine Skills sichtbar — sobald Skill-Routing aktiv ist, erscheinen hier alle Skills mit ihren kausal assoziierten Wörtern.");
     }
     return h("div", { className: "sr-clusters" },
       list.map(function (c) {
-        return h("div", { className: "sr-cluster-row", key: c.tool },
+        const hasWords = Array.isArray(c.words) && c.words.length > 0;
+        return h("div", { className: "sr-cluster-row" + (hasWords ? "" : " sr-cluster-row--empty"), key: c.tool },
           h("div", { className: "sr-cluster-skill" },
             h("span", { className: "sr-cluster-name" }, c.tool),
-            h("span", { className: "sr-cluster-count" }, c.count)
+            h("span", { className: "sr-cluster-count" + (hasWords ? "" : " sr-cluster-count--empty") }, c.count)
           ),
-          h("div", { className: "sr-cluster-words" },
-            c.words.map(function (w) {
-              return h(ClusterChip, { item: w, key: w.word });
-            }),
-            c.more > 0 ? h("span", { className: "sr-cluster-more" }, "+" + c.more) : null
-          )
+          hasWords
+            ? h("div", { className: "sr-cluster-words" },
+                c.words.map(function (w) {
+                  return h(ClusterChip, { item: w, key: w.word });
+                }),
+                c.more > 0 ? h("span", { className: "sr-cluster-more" }, "+" + c.more) : null
+              )
+            : h("div", { className: "sr-cluster-empty-hint" },
+                "noch keine Lern-Daten — erscheint nach erster Nutzung")
         );
       })
     );
@@ -358,7 +362,9 @@
       ),
       h(Card, null,
         h(CardContent, null,
-          h("h3", { className: "sr-section-title" }, "Cluster-Ansicht: alle Skills mit kausalen Wörtern (live, scrollbar)"),
+          h("h3", { className: "sr-section-title" },
+            "Cluster-Ansicht: alle Skills mit kausalen Wörtern (live, scrollbar" +
+            (clusters && clusters.length ? " — " + clusters.length + " Skills" : "") + ")"),
           h(ClusterView, { clusters: clusters })
         )
       ),

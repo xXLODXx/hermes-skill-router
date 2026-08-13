@@ -113,3 +113,9 @@
 .sr-clusters::-webkit-scrollbar { width: 8px; }
 .sr-clusters::-webkit-scrollbar-thumb { background: #30363d; border-radius: 4px; }
 .sr-clusters::-webkit-scrollbar-track { background: transparent; }
+
+/* ── Leere Skill-Zeilen (noch ohne Lern-Daten) ───────────────────────────── */
+.sr-cluster-row--empty { opacity: 0.75; }
+.sr-cluster-row--empty .sr-cluster-skill { border-color: #30363d; }
+.sr-cluster-count--empty { background: #30363d; color: #8b949e; }
+.sr-cluster-empty-hint { font-size: 12px; color: #8b949e; font-style: italic; }

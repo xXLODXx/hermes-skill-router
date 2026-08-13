@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "recipe": {
+    "name": "Python plugin (pytest)",
+    "kind": "python",
+    "bootstrap": [
+      "pip install -e ."
+    ],
+    "build": [],
+    "test": [
+      "pytest"
+    ],
+    "evidence": [
+      "Hermes plugin: dashboard router, no server entrypoint",
+      "start/readiness nicht anwendbar (Plugin, kein FastAPI-Server)"
+    ]
+  },
+  "updatedAt": "2026-08-12T19:04:58.077339+00:00"
+}
