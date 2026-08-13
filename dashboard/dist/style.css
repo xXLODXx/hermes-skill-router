@@ -90,3 +90,26 @@
   white-space: nowrap;
 }
 .sr-cluster-more { font-size: 12px; opacity: 0.6; font-weight: 600; color: #8b949e; }
+
+/* ── Live: letzte Injektion (Task -> Skills) ─────────────────────────────── */
+.sr-injection {
+  display: flex; flex-direction: column; gap: 8px;
+  margin-bottom: 12px; padding: 10px 14px; border-radius: 10px;
+  background: #161b22; border: 1px solid #30363d;
+}
+.sr-injection-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.sr-injection-task { font-weight: 700; font-size: 13px; color: #e6edf3; }
+.sr-injection-time { font-size: 11px; color: #8b949e; opacity: 0.8; }
+.sr-injection-topics, .sr-injection-skills { display: flex; flex-wrap: wrap; gap: 6px; }
+.sr-chip--topic { border-color: #16a34a !important; color: #4ade80 !important; }
+.sr-chip--skill { border-color: #58a6ff !important; color: #79c0ff !important; }
+
+/* ── Cluster-Ansicht scrollbar (live wächst) ─────────────────────────────── */
+.sr-clusters {
+  display: flex; flex-direction: column; gap: 6px;
+  max-height: 560px; overflow-y: auto;
+  padding-right: 4px;
+}
+.sr-clusters::-webkit-scrollbar { width: 8px; }
+.sr-clusters::-webkit-scrollbar-thumb { background: #30363d; border-radius: 4px; }
+.sr-clusters::-webkit-scrollbar-track { background: transparent; }

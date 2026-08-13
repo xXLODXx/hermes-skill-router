@@ -148,3 +148,31 @@ def test_clusters_liefert_alle_kausalen_cluster(dashboard_env) -> None:
     assert flutter["words"][0]["word"] == "riverpod"
     assert flutter["words"][0]["status"] == "kausal"
     assert flutter["words"][0]["lift"] >= 2.0
+
+
+def test_last_injection_ohne_datei(dashboard_env) -> None:
+    """Ohne last_injection.json: sauberer Leer-Zustand, kein Fehler."""
+    api = dashboard_env
+    result = api.last_injection()
+    assert result["exists"] is False
+    assert result["skills"] == []
+
+
+def test_last_injection_mit_datei(dashboard_env, tmp_path) -> None:
+    """Mit Datei: Task + Topics + Skills werden geliefert."""
+    import dashboard.plugin_api as api_mod
+    inj = api_mod._PLUGIN_DIR / "data" / "last_injection.json"
+    inj.parent.mkdir(parents=True, exist_ok=True)
+    inj.write_text(
+        '{"ts": 1750000000, "message": "schau ins kanban", '
+        '"topics": ["kanban"], "skills": ["kanban-dev-orchestration"]}',
+        encoding="utf-8",
+    )
+    try:
+        result = api_mod.last_injection()
+        assert result["exists"] is True
+        assert result["message"] == "schau ins kanban"
+        assert result["topics"] == ["kanban"]
+        assert result["skills"] == ["kanban-dev-orchestration"]
+    finally:
+        inj.unlink(missing_ok=True)

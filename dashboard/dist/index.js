@@ -272,13 +272,43 @@
     );
   }
 
+  function LastInjection({ inj }) {
+    if (!inj || !inj.exists) {
+      return h("div", { className: "sr-empty" },
+        "Noch keine Injektion aufgezeichnet — beim nächsten Skill-Routing erscheint hier die zuletzt verwendete Kombination.");
+    }
+    const when = inj.ts ? new Date(inj.ts * 1000).toLocaleTimeString() : "?";
+    return h("div", { className: "sr-injection" },
+      h("div", { className: "sr-injection-head" },
+        h("span", { className: "sr-injection-task" },
+          "Task: „" + truncate(inj.message || "—", 90) + "\""),
+        h("span", { className: "sr-injection-time" }, "zuletzt " + when)
+      ),
+      inj.topics && inj.topics.length > 0
+        ? h("div", { className: "sr-injection-topics" },
+            inj.topics.map(function (t) {
+              return h("span", { className: "sr-chip sr-chip--topic", key: t }, "✓ " + t);
+            }))
+        : null,
+      inj.skills && inj.skills.length > 0
+        ? h("div", { className: "sr-injection-skills" },
+            inj.skills.map(function (s) {
+              return h("span", { className: "sr-chip sr-chip--skill", key: s }, s);
+            }))
+        : null
+    );
+  }
+
   function Page() {
     const [overview, setOverview] = useState(null);
     const [decision, setDecision] = useState(null);
     const [clusters, setClusters] = useState(null);
+    const [lastInj, setLastInj] = useState(null);
     const [err, setErr] = useState(null);
 
-    useEffect(function () {
+    // Dynamisch: alle 5s neu laden, damit neue Injektionen und Cluster
+    // ohne Reload erscheinen.
+    function loadAll() {
       fetchJSON(API + "/overview")
         .then(setOverview)
         .catch(function (e) { setErr(String((e && e.message) || e)); });
@@ -288,6 +318,15 @@
       fetchJSON(API + "/clusters")
         .then(function (d) { setClusters(d && d.clusters); })
         .catch(function (e) { setErr(String((e && e.message) || e)); });
+      fetchJSON(API + "/last-injection")
+        .then(setLastInj)
+        .catch(function (e) { setErr(String((e && e.message) || e)); });
+    }
+
+    useEffect(function () {
+      loadAll();
+      const iv = setInterval(loadAll, 5000);
+      return function () { clearInterval(iv); };
     }, []);
 
     if (err) {
@@ -313,12 +352,13 @@
       h(Card, null,
         h(CardContent, null,
           h("h3", { className: "sr-section-title" }, "Funktionsweise: Task → Skill-Kandidaten (Pro/Contra)"),
+          h(LastInjection, { inj: lastInj }),
           h(Mindmap, { decision: decision })
         )
       ),
       h(Card, null,
         h(CardContent, null,
-          h("h3", { className: "sr-section-title" }, "Cluster-Ansicht: alle Skills mit kausalen Wörtern"),
+          h("h3", { className: "sr-section-title" }, "Cluster-Ansicht: alle Skills mit kausalen Wörtern (live, scrollbar)"),
           h(ClusterView, { clusters: clusters })
         )
       ),

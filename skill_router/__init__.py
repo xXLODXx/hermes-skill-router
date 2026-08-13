@@ -83,7 +83,46 @@ def register(ctx):
             "message": user_message or "",
             "injected": set(re.findall(r"/([a-z0-9-]+)", injection)),
         }
+        _save_last_injection(
+            user_message or "", injection, _PLUGIN_DIR / "data" / "last_injection.json"
+        )
         return {"context": injection}
+
+    def _save_last_injection(
+        message: str, injection: str, path: Path
+    ) -> None:
+        """Letzte Injektion fürs Dashboard persistieren (Task -> Skills)."""
+        try:
+            import json as _json
+            import re as _re
+            import time as _time
+
+            topics: list[str] = []
+            skills: list[str] = []
+            for line in injection.splitlines():
+                line = line.strip()
+                m_topic = _re.match(r"^- (.+?) \(Match \d+\)$", line)
+                if m_topic:
+                    topics.append(m_topic.group(1))
+                    continue
+                m_skill = _re.match(r"^- ([a-z0-9-]+/[a-z0-9-]+)", line)
+                if m_skill:
+                    skills.append(m_skill.group(1))
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(
+                _json.dumps(
+                    {
+                        "ts": _time.time(),
+                        "message": message[:200],
+                        "topics": topics[:5],
+                        "skills": skills[:15],
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+        except Exception:  # noqa: S110, BLE001 — Observer: nie den Agent-Loop brechen
+            pass
 
     def on_tool(tool_name: str, session_id: str, **kwargs):
         """Jeden Tool-Start erfassen: Wörter der Entscheidungsphase (aktuelle

@@ -231,6 +231,30 @@ def clusters() -> dict:
     }
 
 
+@router.get("/last-injection")
+def last_injection() -> dict:
+    """Letzte reale Skill-Injektion (Task -> Skills), vom Hook persistiert.
+
+    Zeigt, was der Router ZULETZT tatsächlich in eine Session injiziert
+    hat (Task-Wörter, Matched Topics, Skill-Pfade) — die lebendige
+    Momentaufnahme statt der statischen Top-Kandidaten der Mindmap.
+    """
+    path = _PLUGIN_DIR / "data" / "last_injection.json"
+    if not path.is_file():
+        return {"exists": False, "ts": None, "message": None, "topics": [], "skills": []}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {"exists": False, "ts": None, "message": None, "topics": [], "skills": []}
+    return {
+        "exists": True,
+        "ts": data.get("ts"),
+        "message": data.get("message"),
+        "topics": data.get("topics", []),
+        "skills": data.get("skills", []),
+    }
+
+
 def _cluster_items(
     lexicon: dict, stats: dict
 ) -> list[tuple[str, list[tuple[str, int]]]]:
