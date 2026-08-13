@@ -208,10 +208,46 @@ def clusters() -> dict:
     lexicon = _load_json(_LEXICON_PATH)
     stats = _load_json(_STATS_PATH)
 
-    rows = []
+    # Kausale Cluster je Tool (nur Wörter mit Status 'kausal')
+    cluster_map = {t: assoc for t, assoc in _cluster_items(lexicon, stats)}
+
+    # Alle installierten Skills: Cluster-Daten (falls vorhanden) + Meta-Wörter
+    try:
+        all_skills = engine.scan_skills(engine.hermes_home() / "skills")
+    except OSError:
+        all_skills = []
     seen: set[str] = set()
-    for t, assoc in _cluster_items(lexicon, stats):
-        seen.add(t)
+    rows = []
+    for s in all_skills:
+        name = s["name"]
+        seen.add(name)
+        assoc = cluster_map.get(name, [])
+        words = []
+        for w, co in assoc:
+            lv = lift(w, name, lexicon, stats)
+            words.append({
+                "word": w,
+                "lift": round(lv, 2),
+                "count": co,
+                "status": word_status(w, lexicon, stats, name, lv, co),
+            })
+        words.sort(key=lambda i: -i["lift"])
+        rows.append({
+            "tool": name,
+            "count": len(words),
+            "words": words[:12],  # Chips pro Zeile begrenzt, Rest via +N
+            "more": max(len(words) - 12, 0),
+            # Meta-Wörter: die Wörter, die der Skill SELBST mitbringt
+            # (Tags + Name + Description) — so hat JEDE Zeile sofort
+            # Inhalt, und die kausalen Wörter wachsen durch Nutzung dazu.
+            "meta_words": _skill_meta_words(s),
+        })
+
+    # Tools mit Lern-Daten, die keine installierten Skills sind (z.B.
+    # terminal, process, todo): als eigene Zeilen mit Cluster anhängen.
+    for t, assoc in cluster_map.items():
+        if t in seen:
+            continue
         words = []
         for w, co in assoc:
             lv = lift(w, t, lexicon, stats)
@@ -225,30 +261,40 @@ def clusters() -> dict:
         rows.append({
             "tool": t,
             "count": len(words),
-            "words": words[:12],  # Chips pro Zeile begrenzt, Rest via +N
+            "words": words[:12],
             "more": max(len(words) - 12, 0),
+            "meta_words": [],
         })
 
-    # Alle übrigen installierten Skills ergänzen (noch ohne kausale Daten)
-    try:
-        all_skills = engine.scan_skills(engine.hermes_home() / "skills")
-    except OSError:
-        all_skills = []
-    for s in all_skills:
-        if s["name"] in seen:
-            continue
-        rows.append({
-            "tool": s["name"],
-            "count": 0,
-            "words": [],
-            "more": 0,
-        })
+    # Sortierung: Skills MIT Lern-Daten zuerst, dann nach Name
+    rows.sort(key=lambda r: (-(r["count"] > 0), r["tool"].casefold()))
 
     return {
         "total_calls": stats.get("total_calls", 0),
         "total_skills": len(all_skills),
         "clusters": rows,
     }
+
+
+def _skill_meta_words(skill: dict) -> list[str]:
+    """Eigene Wörter eines Skills: Tags + Name + Description-Wörter.
+
+    Liefert bis zu 8 lesbare Begriffe — die statische Wortfläche, die der
+    Skill beim Matching ohnehin bietet (build_injection matcht gegen Tags,
+    Name, Kategorie und Description-Wörter).
+    """
+    seen: set[str] = set()
+    out: list[str] = []
+    for w in list(skill.get("tags", [])) + [skill.get("name", "")]:
+        w = w.strip()
+        if w and w not in seen:
+            seen.add(w)
+            out.append(w)
+    for w in skill.get("desc_words", []):
+        if w not in seen:
+            seen.add(w)
+            out.append(w)
+    return out[:8]
 
 
 @router.get("/last-injection")

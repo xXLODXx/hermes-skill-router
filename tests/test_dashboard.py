@@ -171,6 +171,12 @@ def test_clusters_liefert_alle_kausalen_cluster(dashboard_env) -> None:
     assert len(empty) == 1  # dummy-skill ohne Lern-Daten ist dabei
     assert empty[0]["tool"] == "dummy-skill"
     assert empty[0]["words"] == []
+    # Meta-Wörter: JEDER Skill zeigt seine eigenen Wörter (Tags/Name/
+    # Description) — auch ohne Lern-Daten sofort Inhalt.
+    assert empty[0]["meta_words"] != []
+    assert "dummy-skill" in empty[0]["meta_words"]
+    flutter_row = next(c for c in result["clusters"] if c["tool"] == "flutter-dev")
+    assert flutter_row["meta_words"] != []  # gelernt UND eigene Wörter
 
 
 def test_last_injection_ohne_datei(dashboard_env) -> None:

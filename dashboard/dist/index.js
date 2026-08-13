@@ -257,20 +257,25 @@
     return h("div", { className: "sr-clusters" },
       list.map(function (c) {
         const hasWords = Array.isArray(c.words) && c.words.length > 0;
+        const meta = Array.isArray(c.meta_words) ? c.meta_words : [];
         return h("div", { className: "sr-cluster-row" + (hasWords ? "" : " sr-cluster-row--empty"), key: c.tool },
           h("div", { className: "sr-cluster-skill" },
             h("span", { className: "sr-cluster-name" }, c.tool),
             h("span", { className: "sr-cluster-count" + (hasWords ? "" : " sr-cluster-count--empty") }, c.count)
           ),
-          hasWords
-            ? h("div", { className: "sr-cluster-words" },
-                c.words.map(function (w) {
-                  return h(ClusterChip, { item: w, key: w.word });
-                }),
-                c.more > 0 ? h("span", { className: "sr-cluster-more" }, "+" + c.more) : null
-              )
-            : h("div", { className: "sr-cluster-empty-hint" },
-                "noch keine Lern-Daten — erscheint nach erster Nutzung")
+          h("div", { className: "sr-cluster-words" },
+            c.words.map(function (w) {
+              return h(ClusterChip, { item: w, key: "w" + w.word });
+            }),
+            meta.map(function (w) {
+              return h("span", {
+                className: "sr-chip sr-chip--meta",
+                key: "m" + w,
+                title: "Eigenes Wort des Skills (Tags/Description)",
+              }, "· " + w);
+            }),
+            c.more > 0 ? h("span", { className: "sr-cluster-more" }, "+" + c.more) : null
+          )
         );
       })
     );
@@ -363,7 +368,7 @@
       h(Card, null,
         h(CardContent, null,
           h("h3", { className: "sr-section-title" },
-            "Cluster-Ansicht: alle Skills mit kausalen Wörtern (live, scrollbar" +
+            "Cluster-Ansicht: alle Skills — gelernt + eigene Wörter (live, scrollbar" +
             (clusters && clusters.length ? " — " + clusters.length + " Skills" : "") + ")"),
           h(ClusterView, { clusters: clusters })
         )
