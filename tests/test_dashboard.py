@@ -99,6 +99,10 @@ def dashboard_env(tmp_path: Path, monkeypatch) -> dict:
 
     api._LEXICON_PATH = data_dir / "learned_keywords.json"
     api._STATS_PATH = data_dir / "tool_stats.json"
+    # _PLUGIN_DIR ebenfalls isolieren — sonst schreiben die last_injection-
+    # Tests in den ECHTEN Plugin-Clone (data/last_injection.json des Hooks
+    # wird überschrieben/gelöscht; gefunden 2026-08-13).
+    api._PLUGIN_DIR = tmp_path
     api._cache_mtime = None
     api._cache_overview = None
     api._cache_decision = None
