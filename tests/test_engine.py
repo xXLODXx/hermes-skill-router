@@ -535,11 +535,13 @@ def test_learn_from_result_maps_skill_view_to_skill_name(env):
     assert "skill_view" not in lexicon.get("riverpod", {})
 
 
-def test_output_learning_flag_default_off(tmp_path, monkeypatch):
-    """F1: Feature-Flag Default aus — ohne config.yaml und ohne env kein Lernen."""
+def test_output_learning_flag_default_on(tmp_path, monkeypatch):
+    """F1: Feature-Flag Default AN (Freigabe 2026-08-13) —
+    ohne config.yaml und ohne env ist das Lernen aktiv; explizites
+    `output_learning: false` in config.yaml schaltet aus."""
     monkeypatch.delenv("SKILL_ROUTER_OUTPUT_LEARNING", raising=False)
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
-    assert engine.output_learning_enabled() is False
+    assert engine.output_learning_enabled() is True
 
 
 def test_output_learning_flag_env_override(tmp_path, monkeypatch):

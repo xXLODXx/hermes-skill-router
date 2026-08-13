@@ -160,7 +160,7 @@ def register(ctx):
         Löst die Indirektions-Lücke (Kanban-Task-Body): Wörter des
         Tool-Ergebnisses werden mit dem Skill assoziiert, der sie lieferte.
         Nur aktiv, wenn das Feature-Flag output_learning gesetzt ist
-        (config.yaml, Default aus). Observer: blockt nie.
+        (config.yaml, Default AN). Observer: blockt nie.
         """
         if not engine.output_learning_enabled():
             return
@@ -197,7 +197,7 @@ def register(ctx):
         Löst das 'ja, Option A'-Problem: Die Fachbegriffe stehen in der
         assistant_response, nicht in der Nutzer-Bestätigung. Verstärkt die
         Skills, die die User-Wörter dieser Aufgabe bereits kennen.
-        Nur aktiv bei Feature-Flag output_learning (Default aus). Observer.
+        Nur aktiv bei Feature-Flag output_learning (Default AN). Observer.
         """
         if not engine.output_learning_enabled():
             return

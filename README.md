@@ -124,12 +124,14 @@ Two additional *follow-signal* sources are available behind a feature flag:
   skills already associated with this task's user words — resolves
   *"yes, option A"* confirmations, where the real content is in the LLM output.
 
-Enable it (default **off**, deliberately conservative):
+Enabled by default since 2026-08-13 (after field observation — result
+learning is what gives ALL skills causal word chips, not only the words
+that happen to appear in the user message). Explicitly disable it with:
 
 ```yaml
 # config.yaml
 skill_router:
-  output_learning: true
+  output_learning: false
 ```
 
 Both sources are hardened: field whitelist (`body`, `output`, `text`,

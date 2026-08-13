@@ -45,7 +45,8 @@ THREE_LETTER_WORDS = frozenset({
 # Tool-Ergebnisse und LLM-Antworten sind FOLGE-Signale: Sie werden nur als
 # Lern-Eingaben verwendet (assoziiert mit der User-Message, die sie auslöste),
 # nie als Direkt-Match der aktuellen Injektion. Feature-Flag output_learning
-# (config.yaml, Default aus) schaltet die neuen Quellen frei.
+# (config.yaml, Default AN seit 2026-08-13, Freigabe nach Beobachtung) schaltet die
+# Quellen frei; explizites `false` in config.yaml schaltet aus.
 # Whitelist bewusst NUR Aufgaben-Felder: body (Task-Body) + description —
 # output/text/result/summary enthalten Status-Felder und System-Meldungen
 # (pending/completed/wurdest/capacity...), die nie User-Suchbegriffe sind
@@ -131,20 +132,27 @@ def default_matrix_path(home: Path | None = None) -> Path | None:
 
 
 # ── Feature-Flag: Output-Lernen (F1) ─────────────────────────────────────────
-# config.yaml: skill_router.output_learning (Default false). Env-Override
-# SKILL_ROUTER_OUTPUT_LEARNING für Tests/CI. Konservativ: erst nach
-# Beobachtung freischalten (SoK-Warnung: selbst-generiertes Lernen kann
-# degradieren).
+# config.yaml: skill_router.output_learning (Default AN seit 2026-08-13,
+# Freigabe nach Beobachtung — das Lernen aus Tool-Ergebnissen ist die
+# Grundlage für kausale Wort-Chips ALLER Skills, nicht nur der User-Wörter).
+# Explizites `output_learning: false` in config.yaml schaltet aus.
+# Env-Override SKILL_ROUTER_OUTPUT_LEARNING für Tests/CI (gewinnt immer).
 
 def output_learning_enabled() -> bool:
-    """True, wenn das Output-Lernen (post_tool_call/post_llm_call) aktiv ist."""
+    """True, wenn das Output-Lernen (post_tool_call/post_llm_call) aktiv ist.
+
+    Default ist AN (seit 2026-08-13): ohne config.yaml, ohne env und ohne
+    expliziten Config-Eintrag wird gelernt. Ein explizites
+    ``output_learning: false`` in config.yaml (oder env ``0``/``false``)
+    schaltet das Lernen aus.
+    """
     env = os.environ.get("SKILL_ROUTER_OUTPUT_LEARNING")
     if env is not None:
         return env.strip().lower() in {"1", "true", "yes", "on"}
     try:
         config_path = hermes_home() / "config.yaml"
         if not config_path.is_file():
-            return False
+            return True
         text = config_path.read_text(encoding="utf-8")
         # Schlankes YAML-Scannen ohne PyYAML-Abhängigkeit in der Engine:
         # skill_router: … output_learning: true
@@ -153,10 +161,10 @@ def output_learning_enabled() -> bool:
             text,
         )
         if not m:
-            return False
+            return True
         return m.group(1).strip().lower() in {"true", "yes", "on", "1"}
     except OSError:
-        return False
+        return True
 
 
 # ── Persistenz: Lern-Lexikon ─────────────────────────────────────────────────
