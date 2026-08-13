@@ -19,7 +19,12 @@ from pathlib import Path
 
 from . import engine
 
-_PLUGIN_DIR = Path(__file__).resolve().parent
+# Datenpfad: IMMER das Plugin-Root (parent.parent) — NICHT skill_router/!
+# __file__ liegt in skill_router/, der data/-Ordner aber im Plugin-Root.
+# Ein parent wäre der skill_router/-Unterordner -> Hook und Dashboard
+# (plugin_api.py nutzt ebenfalls parent.parent) lesen sonst verschiedene
+# data/-Ordner und das Dashboard aktualisiert nie (Bug 2026-08-13).
+_PLUGIN_DIR = Path(__file__).resolve().parent.parent
 _LEXICON_PATH = _PLUGIN_DIR / "data" / "learned_keywords.json"
 _STATS_PATH = _PLUGIN_DIR / "data" / "tool_stats.json"
 
