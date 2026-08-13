@@ -78,6 +78,13 @@ def register(ctx):
             return {"context": engine.FALLBACK_HINT}
 
         signature = engine.match_signature(injection)
+        # Dashboard-Aktualisierung IMMER (auch bei gleicher Signatur):
+        # Das Speichern ist billig, aber der User sieht sonst nie den
+        # zuletzt verwendeten Task, wenn das Thema gleich bleibt
+        # (z. B. mehrfach 'kanban' hintereinander).
+        _save_last_injection(
+            user_message or "", injection, _PLUGIN_DIR / "data" / "last_injection.json"
+        )
         if signature and signature == _session_ctx.get("last_match"):
             return None  # same topic — no repeated injection
         if not signature and _session_ctx.get("last_match"):
@@ -88,9 +95,6 @@ def register(ctx):
             "message": user_message or "",
             "injected": set(re.findall(r"/([a-z0-9-]+)", injection)),
         }
-        _save_last_injection(
-            user_message or "", injection, _PLUGIN_DIR / "data" / "last_injection.json"
-        )
         return {"context": injection}
 
     def _save_last_injection(
