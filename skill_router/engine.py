@@ -595,39 +595,39 @@ def _desc_words(desc: str, limit: int = 20) -> set[str]:
 
 
 def scan_skills(skills_dir: Path) -> list[dict]:
-    """Alle installierten Skills: Kategorie, Name, Tags, Description-Wörter."""
+    """Alle installierten Skills: Kategorie, Name, Tags, Description-Wörter.
+
+    Rekursiv (rglob) — findet auch Nicht-Standard-Strukturen (Pitfall 31):
+    Kategorie-Direktdatei (cat/SKILL.md) und 3-stufig (cat/subcat/skill/SKILL.md).
+    Kategorie = Top-Level-Ordner unter skills_dir (Semantik unverändert).
+    """
     skills = []
-    for cat_dir in sorted(skills_dir.iterdir()):
-        if not cat_dir.is_dir() or cat_dir.name.startswith("."):
+    for md in sorted(skills_dir.rglob("SKILL.md")):
+        rel = md.relative_to(skills_dir)
+        if any(part.startswith(".") for part in rel.parts):
             continue
-        for skill_dir in sorted(cat_dir.iterdir()):
-            if not skill_dir.is_dir():
-                continue
-            md = skill_dir / "SKILL.md"
-            if not md.exists():
-                continue
-            try:
-                txt = md.read_text(encoding="utf-8", errors="replace")
-            except OSError:
-                continue
-            m = re.search(r"^name:\s*[\"']?([^\"'\n]+)", txt, re.MULTILINE)
-            name = m.group(1).strip() if m else skill_dir.name
-            tags = []
-            m2 = re.search(r"hermes:\s*\n\s*tags:\s*\[([^\]]*)\]", txt)
-            if m2:
-                tags = [t.strip().strip("'\"") for t in m2.group(1).split(",")]
-            else:
-                m3 = re.search(r"^tags:\s*\[([^\]]*)\]", txt, re.MULTILINE)
-                if m3:
-                    tags = [t.strip().strip("'\"") for t in m3.group(1).split(",")]
-            m4 = re.search(r"^description:\s*[\"']?([^\"'\n]+)", txt, re.MULTILINE)
-            desc = m4.group(1).strip() if m4 else ""
-            skills.append({
-                "cat": cat_dir.name,
-                "name": name,
-                "tags": tags[:3],
-                "desc_words": _desc_words(desc),
-            })
+        try:
+            txt = md.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        m = re.search(r"^name:\s*[\"']?([^\"'\n]+)", txt, re.MULTILINE)
+        name = m.group(1).strip() if m else md.parent.name
+        tags = []
+        m2 = re.search(r"hermes:\s*\n\s*tags:\s*\[([^\]]*)\]", txt)
+        if m2:
+            tags = [t.strip().strip("'\"") for t in m2.group(1).split(",")]
+        else:
+            m3 = re.search(r"^tags:\s*\[([^\]]*)\]", txt, re.MULTILINE)
+            if m3:
+                tags = [t.strip().strip("'\"") for t in m3.group(1).split(",")]
+        m4 = re.search(r"^description:\s*[\"']?([^\"'\n]+)", txt, re.MULTILINE)
+        desc = m4.group(1).strip() if m4 else ""
+        skills.append({
+            "cat": rel.parts[0],
+            "name": name,
+            "tags": tags[:3],
+            "desc_words": _desc_words(desc),
+        })
     return skills
 
 

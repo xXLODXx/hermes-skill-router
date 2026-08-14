@@ -803,3 +803,32 @@ def test_learn_from_result_respects_df_generic(env):
     if generic:
         for g in generic:
             assert g not in lexicon  # DF-generische nie gelernt
+
+
+def test_scan_skills_finds_nonstandard_layouts(env):
+    """Pitfall 31: scan_skills findet Kategorie-Direktdatei (cat/SKILL.md)
+    und 3-stufige Strukturen (cat/subcat/skill/SKILL.md), Kategorie =
+    Top-Level-Ordner."""
+    skills = env / "skills"
+    # Kategorie-Direktdatei: desktop-plugins/SKILL.md
+    (skills / "desktop-plugins").mkdir(exist_ok=True)
+    (skills / "desktop-plugins" / "SKILL.md").write_text(
+        '---\nname: hermes-desktop-plugins\ndescription: "Write desktop app plugins."\n---\n'
+    )
+    # 3-stufig: mlops/evaluation/evaluating-llms-harness/SKILL.md
+    (skills / "mlops" / "evaluation" / "evaluating-llms-harness").mkdir(parents=True, exist_ok=True)
+    (skills / "mlops" / "evaluation" / "evaluating-llms-harness" / "SKILL.md").write_text(
+        '---\nname: evaluating-llms-harness\ndescription: "Benchmark LLMs."\n---\n'
+    )
+    found = engine.scan_skills(skills)
+    names = {s["name"] for s in found}
+    cats = {s["name"]: s["cat"] for s in found}
+    # Standard-2-stufig bleibt gefunden
+    assert "pdf-extraction" in names
+    assert cats["pdf-extraction"] == "productivity"
+    # Kategorie-Direktdatei: Name aus Frontmatter, cat = Top-Level
+    assert "hermes-desktop-plugins" in names
+    assert cats["hermes-desktop-plugins"] == "desktop-plugins"
+    # 3-stufig: gefunden, cat = Top-Level
+    assert "evaluating-llms-harness" in names
+    assert cats["evaluating-llms-harness"] == "mlops"
