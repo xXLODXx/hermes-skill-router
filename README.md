@@ -140,7 +140,7 @@ statuses ignored, IDs/hashes never learned, and nothing is learned without an
 existing causal association (lift gate). The last 3 tool results and the last
 assistant reply also enrich follow-up injections in the same session.
 
-## Stopword strategy (static + dynamic)
+## Stopword strategy (static + dynamic + skill-selectivity)
 
 - A small static, language-neutral base set filters universal filler words
   (`the`, `und`, `task`, `app`, …).
@@ -150,6 +150,21 @@ assistant reply also enrich follow-up injections in the same session.
   **language-independent** (pure statistics, no dictionary) and
   **self-maintaining** (adapts to your skill collection). Threshold:
   `GENERIC_DF_RATIO` in `skill_router/engine.py`.
+- **Skill-selectivity noise suppression** (2026-08-22): The two signals above
+  still let words through that appear in tasks but are bound to *base workflow
+  tools* (`terminal`, `process`, `read_file`, … — the channel with thousands
+  of calls). Such words (`wars`→terminal, `router`→terminal, `kann`/`weis`)
+  are **not skill signals** and used to pollute matching and clusters. The
+  router now decides **self-learning, dictionary-free**: a word is a routing
+  signal iff its strongest association target is an *installed skill* **and**
+  its skill-selectivity (share of association counts on skills) ≥
+  `SKILL_SELECTIVITY_THRESHOLD` (0.5). Calibrated on real data (19 clean
+  signals, 0 noise leaks). It is applied at three points:
+  1. **Matching** (`build_injection`): noise words add no weight.
+  2. **Prune** (`prune_lexicon(..., skill_names=...)`): noise words bound only
+     to base tools are physically removed from the lexicon.
+  3. The classifier is recomputed per run from the installed skill set, so it
+     adapts automatically as skills are added or removed.
 
 ## Development
 

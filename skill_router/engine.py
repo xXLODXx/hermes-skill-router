@@ -513,12 +513,20 @@ def word_status(
     return "beobachtet"
 
 
-def prune_lexicon(lexicon: dict, stats: dict) -> dict:
+def prune_lexicon(
+    lexicon: dict, stats: dict, skill_names: frozenset[str] | None = None
+) -> dict:
     """Nutzungsbasierte Bereinigung: Woerter ohne kausale Assoziation zu IRGENDEINEM
     Tool (bestes Lift < LIFT_THRESHOLD mit Minimum-Support) entfernen.
     Erst ab MIN_CALLS_FOR_LIFT — vorher ist der Lift zu verrauscht.
     Frische Woerter (Gesamt-Kookkurrenz < MIN_COOCCUR) werden verschont,
-    damit neue Assoziationen nach dem Lift-Start noch anwachsen koennen."""
+    damit neue Assoziationen nach dem Lift-Start noch anwachsen koennen.
+
+    Mit ``skill_names`` (2026-08-22): Das Lift-Gate zählt NUR gegen installierte
+    Skills. Basis-Tool-gekoppelte Wörter (wars->terminal, unsloth->terminal)
+    haben zwar hohen Lift gegen `terminal`, sind aber KEIN Routing-Signal und
+    werden entfernt — das ist die selbstlernende Rauschunterdrückung im Bestand.
+    """
     if stats.get("total_calls", 0) < MIN_CALLS_FOR_LIFT:
         return lexicon
     keep = {}
@@ -526,6 +534,8 @@ def prune_lexicon(lexicon: dict, stats: dict) -> dict:
         if sum(tools.values()) < MIN_COOCCUR:
             keep[w] = tools  # zu wenig Daten — kann noch wachsen
             continue
+        if skill_names is not None and not is_signal_word(w, lexicon, skill_names):
+            continue  # Basis-Tool-Kopplung => Rauschwort: entfernen
         best = max(
             (lift(w, t, lexicon, stats) for t, c in tools.items() if c >= MIN_COOCCUR),
             default=0.0,
@@ -677,6 +687,89 @@ def generic_words(skills: list[dict]) -> set[str]:
     return {w for w, c in counts.items() if c / total >= GENERIC_DF_RATIO}
 
 
+# ── Skill-Selektivität (selbstlernende Rauschunterdrückung, 2026-08-22) ──────
+# Statisches STOPWORD-Buch samt DF-Generik lässt Rausch-Wörter durch, die zwar
+# in Aufgaben auftauchen, aber an generische BASIS-Werkzeuge gebunden sind
+# (terminal/process/read_file/... — der lärmende Kanal mit Tausenden Calls).
+# Solche Wörter sind KEINE Skill-Signale: Z. B. 'wars'/'unsloth' landen mit
+# co=55 an 'terminal', 'router' mit co=1 an 'terminal' statt am Skill, und
+# 'kann'/'weis' streuen uniform.
+#
+# Selbstlernende, wörterbuchfreie Alternative: Ein Wort ist genau dann ein
+# Skill-Routing-Signal, wenn seine Assoziationen sich auf INSTALLIERTE SKILLS
+# konzentrieren statt auf Basis-Tools. Das lernt die Engine rein aus der
+# Struktur der Lerndaten (ist ein Target ein installierter Skill?) — keine
+# manuelle Liste, sprachunabhängig, über alle Rotationen stabil.
+# Skill-Selektivität 0..1: Anteil der Assoziations-Counts auf Skill-Namen,
+# gewichtet nach Stärke (Primäres Target = stärkste Skill-Assoziation zählt mehr).
+SKILL_SELECTIVITY_THRESHOLD = 0.5  # >= = Skill-Signal; validiert an echten Daten (19 saubere Signale, 0 Leaks)
+
+
+def _skill_names(skills_dir: Path) -> frozenset[str]:
+    """Namen aller installierten Skills — die Zielmenge für Selektivität."""
+    try:
+        return frozenset(s["name"] for s in scan_skills(skills_dir))
+    except OSError:
+        return frozenset()
+
+
+def skill_selectivity(word: str, lexicon: dict, skill_names: frozenset[str]) -> float:
+    """Anteil der Wort-Assoziations-MASSE, die auf installierte Skills entfällt.
+
+    1.0 = alle Assoziations-Counts zeigen auf Skills (scharfes Signal),
+    0.0 = nur Basis-Tools/andere Non-Skills (Rauschen). Count-gewichtet:
+    die Stärke jeder Assoziation zählt, nicht bloß die Anzahl verschiedener
+    Targets. Leere/unbekannte Assoziationen => 0.0 (Rauschen).
+    """
+    assoc = lexicon.get(word, {})
+    total = sum(assoc.values())
+    if total == 0:
+        return 0.0
+    skill_count = sum(c for t, c in assoc.items() if t in skill_names)
+    return skill_count / total
+
+
+def best_target_is_skill(word: str, lexicon: dict, skill_names: frozenset[str]) -> bool:
+    """Ist das STÄRKSTE Assoziationsziel des Wortes ein installierter Skill?
+
+    Das Primär-Signal: Selbst wenn ein Wort teils an Basis-Tools gebunden ist,
+    zählt es als Skill-Signal, sobald seine stärkste Bindung ein Skill ist
+    (z. B. 'dokument' -> document-to-action-items). Wörter ohne Assoziationen
+    => False. Das eliminiert 'router' -> {'terminal': 1}: best target ist kein
+    Skill, also gewichtet 'router' im Matching NIE (das Fehl-Routing dieser Art).
+    """
+    assoc = lexicon.get(word, {})
+    if not assoc:
+        return False
+    best = max(assoc, key=lambda t: assoc[t])
+    return best in skill_names
+
+
+def is_signal_word(
+    word: str, lexicon: dict, skill_names: frozenset[str], min_sel: float | None = None
+) -> bool:
+    """Ob ein Wort als Skill-Routing-Signal zählt (selbstlernende Rauschfilterung).
+
+    Kombiniert zwei statistische Bedingungen (kein Wörterbuch):
+      1. Stärkstes Assoziationsziel ist ein installierter Skill
+         (best_target_is_skill) — verhindert Basis-Tool-Kopplung wie
+         'router' -> terminal oder 'wars'/'unsloth' -> terminal.
+      2. Skill-Selektivität >= SKILL_SELECTIVITY_THRESHOLD (0.5) — die
+         Assoziationsmasse konzentriert sich auf Skills.
+    Beide Schwellen sind an den echten Lerndaten kalibriert (19 saubere
+    Signale, 0 Rausch-Leaks). Wörter mit <2 Assoziationen gelten als frisch/
+    unsicher -> False (kein voreiliges Routing-Gewicht, darf aber noch lernen).
+    """
+    if min_sel is None:
+        min_sel = SKILL_SELECTIVITY_THRESHOLD
+    assoc = lexicon.get(word, {})
+    if not assoc or sum(assoc.values()) < 1:
+        return False
+    if not best_target_is_skill(word, lexicon, skill_names):
+        return False
+    return skill_selectivity(word, lexicon, skill_names) >= min_sel
+
+
 # ── Matching ─────────────────────────────────────────────────────────────────
 
 def _norm_words(text: str) -> set[str]:
@@ -800,6 +893,15 @@ def build_injection(
     # Dynamische DF-Generik (Schritt 7): Wörter, die viele Skills beschreiben,
     # sind keine Signale — sprachunabhängig, selbstpflegend.
     df_generic = generic_words(skills)
+    # Selbstlernende Rauschfilterung (2026-08-22): Ein gelerntes Wort ist nur
+    # ein Skill-Signal, wenn es sich auf installierte Skills konzentriert.
+    # Basis-Tool-gekoppelte Wörter (wars->terminal, router->terminal, kann/weis)
+    # gewichten beim Matching NICHTS — sie sind kein Routing-Signal.
+    _skill_names = frozenset(s["name"] for s in skills)
+    _lex_noise_words = {
+        w for w in lexicon
+        if not is_signal_word(w, lexicon, _skill_names)
+    }
 
     # Themen matchen
     topic_hits = []
@@ -824,11 +926,15 @@ def build_injection(
         hay |= _norm_words(s["name"])
         hay |= _norm_words(s["cat"])
         hay |= s["desc_words"]
-        score = len((words - STOPWORDS - df_generic) & hay)
-        # Gelernte Assoziationen: count als Gewicht
+        score = len((words - STOPWORDS - df_generic - _lex_noise_words) & hay)
+        # Gelernte Assoziationen: count als Gewicht (nur Skill-Signal-Wörter)
         for w in words & set(lexicon):
-            if len(lexicon[w]) >= GENERIC_SKILL_THRESHOLD or w in df_generic:
-                continue  # generisches Wort — kein Gewicht
+            if (
+                len(lexicon[w]) >= GENERIC_SKILL_THRESHOLD
+                or w in df_generic
+                or w in _lex_noise_words  # Basis-Tool-Kopplung = kein Routing-Signal
+            ):
+                continue  # generisches/rauschendes Wort — kein Gewicht
             count = lexicon[w].get(s["name"], 0)
             if count == 0:
                 continue

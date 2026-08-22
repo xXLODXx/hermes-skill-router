@@ -41,6 +41,17 @@ def register(ctx):
         except OSError:
             return None
 
+    def _skill_names() -> frozenset[str]:
+        """Namen aller installierten Skills — für die selbstlernende
+        Rauschfilterung (Skill-Selektivität) im Prune (mit Engine-Scan)."""
+        try:
+            return frozenset(
+                s["name"]
+                for s in engine.scan_skills(engine.hermes_home() / "skills")
+            )
+        except OSError:
+            return frozenset()
+
     def inject(user_message: str, session_id: str, **kwargs):
         # Immer die aktuelle Message merken — die Entscheidungsphase, die das
         # Tool-Tracking (pre_tool_call) den Tool-Starts zuordnet.
@@ -149,7 +160,7 @@ def register(ctx):
             message, tool_name, kwargs.get("args"), lexicon, stats,
             df_generic=_df_generic(),
         )
-        lexicon = engine.prune_lexicon(lexicon, stats)
+        lexicon = engine.prune_lexicon(lexicon, stats, skill_names=_skill_names())
         engine.save_lexicon(lexicon, _LEXICON_PATH)
         engine.save_stats(stats, _STATS_PATH)
         return

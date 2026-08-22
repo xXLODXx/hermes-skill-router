@@ -832,3 +832,119 @@ def test_scan_skills_finds_nonstandard_layouts(env):
     # 3-stufig: gefunden, cat = Top-Level
     assert "evaluating-llms-harness" in names
     assert cats["evaluating-llms-harness"] == "mlops"
+
+
+# ── Selbstlernende Rauschunterdrückung (Skill-Selektivität, 2026-08-22) ────
+# Kein Wörterbuch: Ein Wort ist ein Skill-Signal, wenn es sich auf installierte
+# Skills konzentriert statt auf Basis-Werkzeuge (terminal/process/read_file).
+
+FIXTURE_SKILLS = frozenset(
+    {"pdf-extraction", "kanban-orchestration", "calendar-sync"}
+)
+
+
+def test_skill_selectivity_pure_signal():
+    """Alle Assoziationen auf Skills => Selektivität 1.0."""
+    lex = {"dokument": {"pdf-extraction": 2, "kanban-orchestration": 1}}
+    assert engine.skill_selectivity("dokument", lex, FIXTURE_SKILLS) == 1.0
+
+
+def test_skill_selectivity_base_tool_pollution():
+    """Überwiegend Basis-Tool-Bindung (terminal) => niedrige Selektivität."""
+    lex = {"wars": {"terminal": 55, "process": 28, "todo": 1}}
+    assert (
+        engine.skill_selectivity("wars", lex, FIXTURE_SKILLS)
+        < engine.SKILL_SELECTIVITY_THRESHOLD
+    )
+
+
+def test_best_target_is_skill_true_signal():
+    """Stärkstes Target ist ein Skill => True (auch bei etwas Tool-Rauschen)."""
+    # 'dokument' hat zwar 2 Assoziationen, aber seine stärkste ist ein Skill
+    lex = {"dokument": {"pdf-extraction": 9, "terminal": 1}}
+    assert engine.best_target_is_skill("dokument", lex, FIXTURE_SKILLS)
+
+
+def test_best_target_is_skill_false_for_base_tool():
+    """Stärkstes Target ist ein Basis-Tool (z. B. 'router' -> terminal) => False."""
+    lex = {"router": {"terminal": 1}}  # das konkrete Fehl-Routing dieser Session
+    assert not engine.best_target_is_skill("router", lex, FIXTURE_SKILLS)
+
+
+def test_is_signal_word_filters_router_noise():
+    """REALFALL: 'router' -> {'terminal': 1} ist KEIN Signal (das Fehl-Routing)."""
+    lex = {"router": {"terminal": 1}}
+    assert not engine.is_signal_word("router", lex, FIXTURE_SKILLS)
+
+
+def test_is_signal_word_filters_typo_cascades():
+    """Tippfehler/Basis-Bindung ('wars', 'unsloth') sind kein Signal."""
+    lex = {
+        "wars": {"terminal": 55},
+        "unsloth": {"terminal": 53, "process": 28},
+        "besster": {"web_search": 4},
+    }
+    for w in ("wars", "unsloth", "besster"):
+        assert not engine.is_signal_word(w, lex, FIXTURE_SKILLS)
+
+
+def test_is_signal_word_keeps_genuine_domain_words():
+    """Echte Domänenwörter (auf einen Skill konzentriert) bleiben Signal."""
+    lex = {
+        "dokument": {"pdf-extraction": 3, "terminal": 1},
+        "scan": {"pdf-extraction": 2},
+        "ssh": {"kanban-orchestration": 2},
+    }
+    assert engine.is_signal_word("dokument", lex, FIXTURE_SKILLS)
+    assert engine.is_signal_word("scan", lex, FIXTURE_SKILLS)
+    assert engine.is_signal_word("ssh", lex, FIXTURE_SKILLS)
+
+
+def test_matching_ignores_base_tool_noise_word(env):
+    """Basis-Tool-gekoppeltes Wort ('wars') gewichtet beim Matching NICHT,
+    obwohl es hohen Count hat — es ist kein Skill-Signal."""
+    stats = {
+        "total_calls": 100,
+        "words": {"wars": 60, "scan": 4},
+        "tools": {"pdf-extraction": 10},
+    }
+    # 'wars' nur an terminal gebunden, 'scan' ein echtes Signal
+    lex = {"wars": {"terminal": 55}, "scan": {"pdf-extraction": 2}}
+    out = engine.build_injection(
+        "wars scan dokument", env / "skills", None, lex, stats
+    )
+    assert out is not None
+    # pdf-extraction sollte trotz 'wars' gematcht werden (über 'scan'/'dokument')
+    assert "pdf-extraction" in out
+
+
+def test_prune_removes_base_tool_noise_with_skill_names():
+    """Prune mit skill_names entfernt Basis-Tool-Rauschwörter, die nur Lift
+    gegen 'terminal' haben — sie sind keine Routing-Signale."""
+    stats = {
+        "total_calls": 1000,  # > MIN_CALLS_FOR_LIFT
+        "words": {"wars": 200, "scan": 10},
+        "tools": {"terminal": 500, "pdf-extraction": 10},
+    }
+    # 'wars': hoher Lift gegen terminal, aber best target ist kein Skill
+    lex = {
+        "wars": {"terminal": 190},
+        "scan": {"pdf-extraction": 9},
+    }
+    pruned = engine.prune_lexicon(lex, stats, skill_names=FIXTURE_SKILLS)
+    assert "wars" not in pruned  # Rausch eliminiert
+    assert "scan" in pruned      # echtes Signal bleibt
+
+
+def test_prune_without_skill_names_keeps_old_behavior():
+    """Ohne skill_names (Rückwärtskompatibilität) verhält sich Prune wie bisher."""
+    # Lift(wars, terminal) = 190/(200*500/2000) = 190/50 = 3.8 >= 2.0 -> altes Verhalten behält
+    stats = {"total_calls": 2000, "words": {"wars": 200}, "tools": {"terminal": 500}}
+    lex = {"wars": {"terminal": 190}}
+    # Ohne skill_names: Lift gegen terminal zählt -> bleibt (altes Verhalten)
+    pruned = engine.prune_lexicon(lex, stats)
+    assert "wars" in pruned
+
+    # Mit skill_names: 'terminal' ist kein Skill -> als Rausch entfernt
+    pruned2 = engine.prune_lexicon(lex, stats, skill_names=FIXTURE_SKILLS)
+    assert "wars" not in pruned2
