@@ -6,7 +6,13 @@ from collections.abc import Iterable, Mapping
 from dataclasses import replace
 
 from .evidence import evidence_for
-from .models import CandidateDecision, Evidence, RoutingDecision, SkillRecord
+from .models import (
+    CandidateDecision,
+    DecisionKind,
+    Evidence,
+    RoutingDecision,
+    SkillRecord,
+)
 
 MAX_CANDIDATES = 3
 
@@ -56,7 +62,7 @@ def select(
             rejected.append(CandidateDecision(skill, "reject", score / 10, evidence, reason))
             continue
         confidence = min(0.99, score / 10 + (0.12 if len(distinct_kinds) > 1 else 0.0))
-        decision = "required" if any(item.kind == "name" for item in evidence) else "recommended"
+        decision: DecisionKind = "required" if any(item.kind == "name" for item in evidence) else "recommended"
         candidates.append(CandidateDecision(skill, decision, confidence, evidence, "mehrere taskbezogene Evidenzen" if len(distinct_kinds) > 1 else "taskbezogene Evidenz"))
     def ranking(item: CandidateDecision) -> tuple[float, float, str]:
         exact_score = sum(

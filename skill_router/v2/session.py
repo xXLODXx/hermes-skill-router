@@ -5,6 +5,7 @@ from __future__ import annotations
 import threading
 import time
 from dataclasses import replace
+from typing import Any, cast
 
 from .models import SessionTurn
 
@@ -51,7 +52,7 @@ class SessionStore:
             if item is None:
                 return
             current = item[1]
-            self._items[session_id] = (now, replace(current, **changes))
+            self._items[session_id] = (now, replace(current, **cast(Any, changes)))
 
     def size(self) -> int:
         with self._lock:
