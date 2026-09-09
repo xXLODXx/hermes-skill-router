@@ -1,130 +1,45 @@
-/* Skill Router Dashboard Plugin — Styles */
-.sr-page { display: flex; flex-direction: column; gap: 16px; padding: 4px; }
-
-.sr-stats { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
-.sr-stat { min-width: 150px; flex: 1 1 150px; }
-.sr-stat-value { font-size: 26px; font-weight: 700; line-height: 1.1; }
-.sr-stat-label { font-size: 12px; opacity: 0.7; margin-top: 2px; }
-.sr-stat-sub { font-size: 11px; opacity: 0.55; }
-.sr-lift-badge { align-self: center; }
-
-.sr-section-title { margin: 0 0 10px; font-size: 14px; font-weight: 600; }
-
-.sr-table-wrap { overflow-x: auto; max-height: 420px; overflow-y: auto; }
-.sr-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-.sr-table th { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--border, #333); opacity: 0.7; font-weight: 600; position: sticky; top: 0; background: var(--background, #111); }
-.sr-table td { padding: 5px 10px; border-bottom: 1px solid var(--border, #222); }
-.sr-word { font-weight: 600; }
-.sr-tool { font-family: monospace; font-size: 12px; opacity: 0.85; }
-
-.sr-badge { font-size: 11px; padding: 2px 8px; border-radius: 999px; font-weight: 600; }
-.sr-badge--causal { background: rgba(22, 163, 74, 0.18); color: #4ade80; }
-.sr-badge--generic { background: rgba(220, 38, 38, 0.18); color: #f87171; }
-.sr-badge--observed { background: rgba(245, 158, 11, 0.18); color: #fbbf24; }
-
-.sr-empty { padding: 18px; opacity: 0.65; font-size: 13px; }
-.sr-error { padding: 18px; color: #f87171; font-size: 13px; }
-
-/* ── Mindmap (Stil: klassische Pro/Contra-Entscheidungsmap) ──────────────── */
-.sr-mindmap { display: flex; flex-direction: column; gap: 8px; }
-.sr-svg { width: 100%; max-width: 960px; height: auto; }
-
-/* Kanten */
-.sr-mline { stroke: #4b5563; stroke-width: 2; fill: none; }
-.sr-mline-sub { stroke: #6b7280; stroke-width: 1.2; fill: none; opacity: 0.85; }
-
-/* Status-Icon-Kreise zwischen Zentrum und Alternative */
-.sr-micon { fill: #ffffff; stroke-width: 2.5; }
-.sr-micon-sym { font-size: 13px; font-weight: 800; }
-
-/* Zentraler Knoten "Task" (dunkelgrau, weißer Text) */
-.sr-mnode-center { fill: #374151; stroke: #1f2937; stroke-width: 1.5; }
-.sr-mtext-center { fill: #ffffff; font-size: 13px; font-weight: 700; }
-
-/* Alternativen (weiß, schwarzer Rand) */
-.sr-mnode-alt { fill: #ffffff; stroke: #1f2937; stroke-width: 1.5; }
-.sr-mtext-alt { fill: #111827; font-size: 11px; font-weight: 700; }
-
-/* Pro/Contra-Unterknoten (grau, Rand farbig) */
-.sr-mnode-sub { stroke-width: 1.5; }
-.sr-mnode-pro { fill: #f3f4f6; stroke: #16a34a; }
-.sr-mnode-contra { fill: #f3f4f6; stroke: #dc2626; }
-.sr-mtext-sub { font-size: 9.5px; font-weight: 600; }
-.sr-mtext-pro { fill: #15803d; }
-.sr-mtext-contra { fill: #b91c1c; }
-
-.sr-legend { display: flex; gap: 16px; font-size: 11px; opacity: 0.8; flex-wrap: wrap; }
-.sr-legend-item { display: inline-flex; align-items: center; gap: 5px; }
-.sr-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; }
-
-/* ── Cluster-Ansicht (Zeilen-Layout) — direkte Farben (keine CSS-Variablen:
-   das Dashboard-Theme definiert --foreground/--card ggf. invalide, wodurch
-   var(--x, fallback) NICHT greift und Text unsichtbar wird) ──────────── */
-.sr-clusters { display: flex; flex-direction: column; gap: 6px; }
-.sr-cluster-row {
-  display: flex; align-items: center; gap: 12px;
-  padding: 8px 12px; border-radius: 10px;
-  background: #161b22;
-  border: 1px solid #2a2f3a;
-}
-.sr-cluster-row:nth-child(even) { background: #1c2128; }
-.sr-cluster-skill {
-  flex: 0 0 260px; display: flex; align-items: center; justify-content: space-between;
-  gap: 8px; padding: 6px 12px; border-radius: 8px;
-  background: #21262d; border: 1px solid #58a6ff;
-}
-.sr-cluster-name {
-  font-weight: 700; font-size: 13px; color: #e6edf3;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.sr-cluster-count {
-  flex: 0 0 auto; min-width: 20px; text-align: center;
-  background: #238636; color: #ffffff; border-radius: 999px;
-  font-size: 11px; font-weight: 700; padding: 1px 6px;
-}
-.sr-cluster-words { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-.sr-chip {
-  display: inline-flex; align-items: center; gap: 4px;
-  padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600;
-  background: #1c2128; border: 1.5px solid;
-  white-space: nowrap;
-}
-.sr-cluster-more { font-size: 12px; opacity: 0.6; font-weight: 600; color: #8b949e; }
-
-/* ── Live: letzte Injektion (Task -> Skills) ─────────────────────────────── */
-.sr-injection {
-  display: flex; flex-direction: column; gap: 8px;
-  margin-bottom: 12px; padding: 10px 14px; border-radius: 10px;
-  background: #161b22; border: 1px solid #30363d;
-}
-.sr-injection-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
-.sr-injection-task { font-weight: 700; font-size: 13px; color: #e6edf3; }
-.sr-injection-time { font-size: 11px; color: #8b949e; opacity: 0.8; }
-.sr-injection-topics, .sr-injection-skills { display: flex; flex-wrap: wrap; gap: 6px; }
-.sr-chip--topic { border-color: #16a34a !important; color: #4ade80 !important; }
-.sr-chip--skill { border-color: #58a6ff !important; color: #79c0ff !important; }
-
-/* ── Cluster-Ansicht scrollbar (live wächst) ─────────────────────────────── */
-.sr-clusters {
-  display: flex; flex-direction: column; gap: 6px;
-  max-height: 560px; overflow-y: auto;
-  padding-right: 4px;
-}
-.sr-clusters::-webkit-scrollbar { width: 8px; }
-.sr-clusters::-webkit-scrollbar-thumb { background: #30363d; border-radius: 4px; }
-.sr-clusters::-webkit-scrollbar-track { background: transparent; }
-
-/* ── Leere Skill-Zeilen (noch ohne Lern-Daten) ───────────────────────────── */
-.sr-cluster-row--empty { opacity: 0.75; }
-.sr-cluster-row--empty .sr-cluster-skill { border-color: #30363d; }
-.sr-cluster-count--empty { background: #30363d; color: #8b949e; }
-.sr-cluster-empty-hint { font-size: 12px; color: #8b949e; font-style: italic; }
-
-/* ── Meta-Chips: eigene Wörter des Skills (Tags/Description) ──────────────── */
-.sr-chip--meta {
-  border-color: #8b949e !important;
-  color: #8b949e !important;
-  background: transparent !important;
-  border-style: dashed;
-  font-weight: 500;
-}
+.sr2-page { display: flex; flex-direction: column; gap: 16px; padding: 8px; color: var(--foreground, #e6edf3); }
+.sr2-hero { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; padding: 22px 24px; border: 1px solid #30363d; border-radius: 14px; background: linear-gradient(135deg, #161b22, #1d2633); }
+.sr2-kicker { color: #79c0ff; letter-spacing: .12em; font-size: 10px; font-weight: 800; }
+.sr2-hero h1 { margin: 6px 0; font-size: 24px; letter-spacing: -.02em; }
+.sr2-hero p { margin: 0; color: #8b949e; font-size: 13px; }
+.sr2-health { white-space: nowrap; border-radius: 999px; font-weight: 800; letter-spacing: .04em; }
+.sr2-health--ok { color: #7ee787 !important; border-color: #238636 !important; background: rgba(35,134,54,.18) !important; }
+.sr2-health--warn { color: #f2cc60 !important; border-color: #9e6a03 !important; background: rgba(158,106,3,.18) !important; }
+.sr2-grid { display: grid; gap: 12px; }
+.sr2-grid--stats { grid-template-columns: repeat(6, minmax(110px, 1fr)); }
+.sr2-grid--main { grid-template-columns: 1fr 1fr; }
+.sr2-stat { min-width: 0; padding: 14px 16px; border: 1px solid #30363d; border-radius: 12px; background: #161b22; }
+.sr2-stat-value { font-size: 23px; font-weight: 800; color: #e6edf3; }
+.sr2-stat--blue .sr2-stat-value { color: #79c0ff; }
+.sr2-stat--green .sr2-stat-value { color: #7ee787; }
+.sr2-stat--amber .sr2-stat-value { color: #f2cc60; }
+.sr2-stat-label { margin-top: 4px; font-size: 12px; font-weight: 700; }
+.sr2-stat-detail, .sr2-card-note { color: #8b949e; font-size: 11px; }
+.sr2-card { border: 1px solid #30363d; background: #0d1117; }
+.sr2-card-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 14px; }
+.sr2-card-head h2 { margin: 0; font-size: 15px; }
+.sr2-progress { margin: 13px 0; }
+.sr2-progress-head { display: flex; justify-content: space-between; font-size: 12px; color: #8b949e; }
+.sr2-progress-head strong { color: #e6edf3; }
+.sr2-track { height: 8px; margin-top: 6px; overflow: hidden; border-radius: 999px; background: #21262d; }
+.sr2-fill { height: 100%; border-radius: inherit; background: linear-gradient(90deg, #1f6feb, #58a6ff); transition: width .3s ease; }
+.sr2-evidence { display: grid; grid-template-columns: 1fr 1fr; column-gap: 22px; }
+.sr2-callout { margin-top: 14px; padding: 10px 12px; border-left: 3px solid #58a6ff; color: #8b949e; background: #161b22; font-size: 12px; }
+.sr2-events { display: flex; flex-direction: column; gap: 8px; max-height: 430px; overflow: auto; }
+.sr2-event { display: flex; gap: 10px; padding: 11px 12px; border: 1px solid #30363d; border-radius: 10px; background: #161b22; }
+.sr2-event-dot { flex: 0 0 9px; width: 9px; height: 9px; margin-top: 5px; border-radius: 50%; background: #8b949e; }
+.sr2-event--injected .sr2-event-dot { background: #3fb950; }
+.sr2-event--fallback .sr2-event-dot { background: #f2cc60; }
+.sr2-event-main { min-width: 0; flex: 1; }
+.sr2-event-title { display: flex; justify-content: space-between; gap: 12px; font-size: 12px; font-weight: 800; }
+.sr2-event-time { color: #8b949e; font-size: 11px; font-weight: 400; }
+.sr2-event-skills { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
+.sr2-pill { padding: 3px 8px; border: 1px solid #388bfd; border-radius: 999px; color: #79c0ff; font: 11px ui-monospace, SFMono-Regular, monospace; }
+.sr2-event-meta, .sr2-event-muted { margin-top: 7px; color: #8b949e; font-size: 11px; }
+.sr2-learning { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+.sr2-learning .sr2-stat { background: #161b22; }
+.sr2-empty, .sr2-loading, .sr2-error { padding: 24px; color: #8b949e; font-size: 13px; }
+.sr2-error { color: #f2cc60; }
+@media (max-width: 1000px) { .sr2-grid--stats { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 700px) { .sr2-grid--main { grid-template-columns: 1fr; } .sr2-grid--stats { grid-template-columns: repeat(2, 1fr); } .sr2-hero { flex-direction: column; } .sr2-evidence { grid-template-columns: 1fr; } }

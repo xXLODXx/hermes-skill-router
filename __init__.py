@@ -18,6 +18,12 @@ _PLUGIN_DIR = Path(__file__).resolve().parent
 if str(_PLUGIN_DIR) not in sys.path:
     sys.path.insert(0, str(_PLUGIN_DIR))
 
-from skill_router import register
+from skill_router import register as _register
+
+
+def register(ctx):
+    """Delegate registration to the package implementation."""
+    return _register(ctx)
+
 
 __all__ = ["register"]

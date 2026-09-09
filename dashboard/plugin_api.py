@@ -48,9 +48,10 @@ router = APIRouter()
 # aus dem Root und zeigte bei Repo-Installation immer leere Daten.
 _LEXICON_PATH = _PLUGIN_DIR / "data" / "learned_keywords.json"
 _STATS_PATH = _PLUGIN_DIR / "data" / "tool_stats.json"
+_AUDIT_PATH = _PLUGIN_DIR / "data" / "v2_injections.jsonl"
 
 # mtime-Cache: nur bei Datei-Änderung neu berechnen (Overhead ≈ 0).
-_cache_mtime: tuple[float, float] | None = None
+_cache_mtime: tuple[float, float, float] | None = None
 _cache_overview: dict | None = None
 _cache_decision: dict | None = None
 
@@ -63,22 +64,85 @@ def _load_json(path: Path) -> dict:
         return {}
 
 
-def _data_mtime() -> tuple[float, float] | None:
-    """mtime-Paar der beiden Datendateien (None wenn nicht vorhanden)."""
+def _audit_events(limit: int = 100) -> list[dict]:
     try:
-        return (_LEXICON_PATH.stat().st_mtime, _STATS_PATH.stat().st_mtime)
+        lines = _AUDIT_PATH.read_text(encoding="utf-8").splitlines()[-limit:]
     except OSError:
-        return None
+        return []
+    events = []
+    for line in lines:
+        try:
+            item = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(item, dict):
+            events.append(item)
+    return events
+
+
+def _data_mtime() -> tuple[float, float, float]:
+    """Stable mtime-Triple; missing optional files count as unchanged (0.0)."""
+    def mtime(path: Path) -> float:
+        try:
+            return path.stat().st_mtime
+        except OSError:
+            return 0.0
+
+    return (mtime(_LEXICON_PATH), mtime(_STATS_PATH), mtime(_AUDIT_PATH))
 
 
 def _invalidate_if_changed() -> None:
-    """Cache invalidieren, wenn sich die Datendateien geändert haben."""
+    """Cache invalidieren, wenn sich Lern- oder Auditdaten ändern."""
     global _cache_mtime, _cache_overview, _cache_decision
     mtime = _data_mtime()
     if mtime != _cache_mtime:
         _cache_mtime = mtime
         _cache_overview = None
         _cache_decision = None
+
+
+@router.get("/runtime-metrics")
+def runtime_metrics() -> dict:
+    """V2-Diagnosemetriken aus anonymisierten Routing-Events."""
+    events = _audit_events()
+    accepted = sum(int(e.get("accepted_count", len(e.get("accepted", [])))) for e in events)
+    rejected = sum(int(e.get("rejected_count", 0)) for e in events)
+    injections = sum(bool(e.get("accepted")) for e in events)
+    fallbacks = sum(bool(e.get("fallback_reason")) for e in events)
+    budget = sum(int(e.get("budget_rejections", 0)) for e in events)
+    chars = [int(e.get("estimated_chars", 0)) for e in events]
+    confidence = [float(e.get("confidence_avg", 0.0)) for e in events]
+    evidence: dict[str, int] = {}
+    for event in events:
+        for kind, count in event.get("evidence_kind_counts", {}).items():
+            evidence[kind] = evidence.get(kind, 0) + int(count)
+    recent = []
+    for event in reversed(events[-12:]):
+        recent.append({
+            "ts": event.get("ts"),
+            "accepted": event.get("accepted", []),
+            "accepted_count": int(event.get("accepted_count", len(event.get("accepted", [])))),
+            "rejected_count": int(event.get("rejected_count", 0)),
+            "budget_rejections": int(event.get("budget_rejections", 0)),
+            "estimated_chars": int(event.get("estimated_chars", 0)),
+            "confidence": round(float(event.get("confidence_avg", 0.0)), 2),
+            "fallback": event.get("fallback_reason"),
+        })
+    return {
+        "version": "0.7.0",
+        "events": len(events),
+        "injections": injections,
+        "fallbacks": fallbacks,
+        "fallback_rate": round(fallbacks / len(events), 3) if events else 0.0,
+        "accepted_candidates": accepted,
+        "rejected_candidates": rejected,
+        "budget_rejections": budget,
+        "avg_candidates": round(accepted / len(events), 2) if events else 0.0,
+        "avg_chars": round(sum(chars) / len(chars), 1) if chars else 0.0,
+        "avg_confidence": round(sum(confidence) / len(confidence), 3) if confidence else 0.0,
+        "evidence": dict(sorted(evidence.items())),
+        "recent": recent,
+    }
 
 
 @router.get("/overview")

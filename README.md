@@ -44,8 +44,25 @@ This plugin closes that gap with three mechanisms:
    The lexicon is pruned on every save: entries without any causal association
    are removed. Marginal counts live in `tool_stats.json`.
 
-Typical cost: **70–200 tokens per injection**, 0 tokens for follow-ups on the
-same topic.
+## V2 routing and diagnostics
+
+Version 0.7.0 uses a precision-first selector for the live routing path:
+
+- Exact name, tag, description, matrix and validated learned signals outrank generic matches.
+- Language-neutral subword/stem and compound evidence is supporting evidence only; it cannot trigger an injection by itself.
+- At most three candidates are injected per event. Candidates over the budget are recorded as rejections rather than silently expanding the prompt.
+- If no candidate reaches the confidence gate, the router emits a short fail-safe fallback instead of loading unrelated skills.
+- Sparse observer hook payloads are accepted safely; observer hooks do not block the agent turn.
+
+The plugin writes privacy-safe JSONL diagnostics to `data/v2_injections.jsonl`. Events contain aggregated counts, hashed session identifiers, confidence, evidence kinds, fallback reasons and estimated injection size — never raw user prompts or raw session IDs. The analyzer can be run independently:
+
+```bash
+python scripts/analyze_v2_metrics.py data/v2_injections.jsonl
+```
+
+The dashboard's **Mission Control** view separates live routing health from the historical learning store. It shows the runtime version, routing funnel, accepted/rejected candidates, fallbacks, confidence, evidence profile and recent anonymized decisions. A zero-event state means “no runtime data yet”, not “plugin failed”.
+
+Typical cost: **70–200 tokens per injection**, 0 tokens for follow-ups on the same topic.
 
 ## Installation
 
