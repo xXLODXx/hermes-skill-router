@@ -40,20 +40,22 @@ def register(ctx):
         if turn is None:
             return None
         skills = scan_catalog(engine.hermes_home() / "skills")
+        loaded = _loaded_names(kwargs) | turn.already_loaded
         decision = select(
             user_message or "",
             skills,
-            already_loaded=_loaded_names(kwargs) | turn.already_loaded,
+            already_loaded=loaded,
         )
         names = tuple(item.skill.canonical_name for item in decision.candidates)
         if names == turn.last_signature:
+            _STORE.update(session_id, already_loaded=loaded)
             record_audit(_AUDIT_PATH, session_id, decision)
             return None
         _STORE.update(
             session_id,
             last_signature=names,
             injected=set(names),
-            already_loaded=turn.already_loaded,
+            already_loaded=loaded,
         )
         record_audit(_AUDIT_PATH, session_id, decision)
         context = render(decision)

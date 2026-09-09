@@ -68,3 +68,25 @@ def test_audit_hashes_session_and_never_stores_raw_id(tmp_path: Path) -> None:
     text = path.read_text(encoding="utf-8")
     assert "t_private_session_123" not in text
     assert '"fallback_reason": null' in text
+
+
+def test_hook_persists_external_loaded_skills(monkeypatch, tmp_path: Path) -> None:
+    """A loader-provided skill must remain excluded on the next turn."""
+    import skill_router
+
+    class Context:
+        def __init__(self) -> None:
+            self.hooks = {}
+
+        def register_hook(self, name: str, callback) -> None:
+            self.hooks[name] = callback
+
+    monkeypatch.setattr(skill_router.engine, "hermes_home", lambda: tmp_path)
+    _skills(tmp_path)
+    context = Context()
+    skill_router.register(context)
+    inject = context.hooks["pre_llm_call"]
+    assert inject("prüfe Android emulator", "session-loaded", loaded_skills=["android-emulator"]) is None
+    state = skill_router._STORE.get("session-loaded")
+    assert state is not None
+    assert "android-emulator" in state.already_loaded
