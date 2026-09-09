@@ -101,3 +101,24 @@ def test_candidate_budget_is_hard_capped() -> None:
     assert len(decision.candidates) == 3
     assert len(decision.rejected) == 5
     assert all(item.reason == "Kandidatenbudget überschritten" for item in decision.rejected)
+
+
+def test_language_neutral_stem_evidence() -> None:
+    skill = SkillRecord("audio-processing", "media", tags=("convert", "audio"))
+    decision = select("converting audio", [skill])
+    assert [item.skill.name for item in decision.candidates] == ["audio-processing"]
+    assert any(item.kind == "subword" for item in decision.candidates[0].evidence)
+
+
+def test_language_neutral_compound_evidence() -> None:
+    skill = SkillRecord("audio-processing", "media", tags=("audio",), description="Convert audio with FFmpeg")
+    decision = select("Audiodatei FFmpeg", [skill])
+    assert [item.skill.name for item in decision.candidates] == ["audio-processing"]
+    assert any(item.kind == "subword" for item in decision.candidates[0].evidence)
+
+
+def test_isolated_subword_signal_is_rejected() -> None:
+    skill = SkillRecord("audio-processing", "media", tags=("convert",))
+    decision = select("converting", [skill])
+    assert not decision.candidates
+    assert decision.rejected[0].reason == "isoliertes Stamm-/Teilwortsignal"

@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Literal
 
-EvidenceKind = Literal["name", "tag", "description", "learned", "matrix"]
+EvidenceKind = Literal["name", "tag", "description", "learned", "matrix", "subword"]
 DecisionKind = Literal["required", "recommended", "observed", "reject"]
 
 

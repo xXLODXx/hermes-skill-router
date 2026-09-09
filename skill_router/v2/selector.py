@@ -50,13 +50,23 @@ def select(
             continue
         score = sum(item.weight for item in evidence)
         distinct_kinds = {item.kind for item in evidence}
-        if score < 3.0 or not evidence:
-            rejected.append(CandidateDecision(skill, "reject", score / 10, evidence, "keine ausreichende Evidenz"))
+        has_exact_evidence = any(item.kind in {"name", "tag", "description", "learned", "matrix"} for item in evidence)
+        if score < 3.0 or not evidence or not has_exact_evidence:
+            reason = "keine ausreichende Evidenz" if has_exact_evidence else "isoliertes Stamm-/Teilwortsignal"
+            rejected.append(CandidateDecision(skill, "reject", score / 10, evidence, reason))
             continue
         confidence = min(0.99, score / 10 + (0.12 if len(distinct_kinds) > 1 else 0.0))
         decision = "required" if any(item.kind == "name" for item in evidence) else "recommended"
         candidates.append(CandidateDecision(skill, decision, confidence, evidence, "mehrere taskbezogene Evidenzen" if len(distinct_kinds) > 1 else "taskbezogene Evidenz"))
-    candidates.sort(key=lambda item: (-item.confidence, item.skill.canonical_name))
+    def ranking(item: CandidateDecision) -> tuple[float, float, str]:
+        exact_score = sum(
+            evidence.weight
+            for evidence in item.evidence
+            if evidence.kind != "subword"
+        )
+        return (-item.confidence, -exact_score, item.skill.canonical_name)
+
+    candidates.sort(key=ranking)
     overflow = candidates[MAX_CANDIDATES:]
     candidates = candidates[:MAX_CANDIDATES]
     rejected.extend(
