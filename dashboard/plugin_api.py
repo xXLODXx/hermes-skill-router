@@ -80,12 +80,15 @@ def _audit_events(limit: int = 100) -> list[dict]:
     return events
 
 
-def _data_mtime() -> tuple[float, float, float] | None:
-    """mtime-Triple der Lern- und Auditdaten."""
-    try:
-        return (_LEXICON_PATH.stat().st_mtime, _STATS_PATH.stat().st_mtime, _AUDIT_PATH.stat().st_mtime)
-    except OSError:
-        return None
+def _data_mtime() -> tuple[float, float, float]:
+    """Stable mtime-Triple; missing optional files count as unchanged (0.0)."""
+    def mtime(path: Path) -> float:
+        try:
+            return path.stat().st_mtime
+        except OSError:
+            return 0.0
+
+    return (mtime(_LEXICON_PATH), mtime(_STATS_PATH), mtime(_AUDIT_PATH))
 
 
 def _invalidate_if_changed() -> None:
