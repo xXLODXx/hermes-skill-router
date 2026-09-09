@@ -95,6 +95,8 @@ def test_hook_persists_external_loaded_skills(monkeypatch, tmp_path: Path) -> No
     state = skill_router._STORE.get("session-loaded")
     assert state is not None
     assert "android-emulator" in state.already_loaded
+    assert context.hooks["post_tool_call"]() is None
+    assert context.hooks["post_llm_call"]() is None
 
 
 def test_candidate_budget_is_hard_capped() -> None:

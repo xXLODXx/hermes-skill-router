@@ -75,7 +75,7 @@ def register(ctx):
             _STORE.update(session_id, already_loaded=loaded)
         return
 
-    def on_tool_result(function_name: str, result: object, session_id: str = "", **kwargs):
+    def on_tool_result(function_name: str = "", result: object = None, session_id: str = "", **kwargs):
         if not session_id or not output_learning_enabled():
             return
         turn = _STORE.get(session_id)
@@ -85,7 +85,7 @@ def register(ctx):
         return
 
     def on_llm_response(
-        assistant_response: str, conversation_history: object, session_id: str = "", **kwargs
+        assistant_response: str = "", conversation_history: object = None, session_id: str = "", **kwargs
     ):
         if not session_id or not output_learning_enabled():
             return
