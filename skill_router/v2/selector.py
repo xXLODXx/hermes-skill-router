@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
+from dataclasses import replace
 
 from .evidence import evidence_for
 from .models import CandidateDecision, Evidence, RoutingDecision, SkillRecord
+
+MAX_CANDIDATES = 3
 
 
 def _canonical_set(values: Iterable[str]) -> set[str]:
@@ -54,5 +57,11 @@ def select(
         decision = "required" if any(item.kind == "name" for item in evidence) else "recommended"
         candidates.append(CandidateDecision(skill, decision, confidence, evidence, "mehrere taskbezogene Evidenzen" if len(distinct_kinds) > 1 else "taskbezogene Evidenz"))
     candidates.sort(key=lambda item: (-item.confidence, item.skill.canonical_name))
+    overflow = candidates[MAX_CANDIDATES:]
+    candidates = candidates[:MAX_CANDIDATES]
+    rejected.extend(
+        replace(item, decision="reject", reason="Kandidatenbudget überschritten")
+        for item in overflow
+    )
     fallback = None if candidates else "no_high_confidence_match"
     return RoutingDecision(tuple(candidates), tuple(rejected), fallback)

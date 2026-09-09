@@ -4,7 +4,7 @@ from pathlib import Path
 
 from skill_router.v2.audit import record
 from skill_router.v2.catalog import scan_catalog
-from skill_router.v2.models import RoutingDecision
+from skill_router.v2.models import RoutingDecision, SkillRecord
 from skill_router.v2.render import render
 from skill_router.v2.selector import select
 from skill_router.v2.session import SessionStore
@@ -90,3 +90,14 @@ def test_hook_persists_external_loaded_skills(monkeypatch, tmp_path: Path) -> No
     state = skill_router._STORE.get("session-loaded")
     assert state is not None
     assert "android-emulator" in state.already_loaded
+
+
+def test_candidate_budget_is_hard_capped() -> None:
+    skills = [
+        SkillRecord(f"skill-{index}", "test", tags=("shared", "task"))
+        for index in range(8)
+    ]
+    decision = select("shared task", skills)
+    assert len(decision.candidates) == 3
+    assert len(decision.rejected) == 5
+    assert all(item.reason == "Kandidatenbudget überschritten" for item in decision.rejected)
