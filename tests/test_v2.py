@@ -1,5 +1,6 @@
 """V2 contract tests: evidence, session isolation and fail-safe behavior."""
 
+import json
 from pathlib import Path
 
 from skill_router.v2.audit import record
@@ -68,6 +69,10 @@ def test_audit_hashes_session_and_never_stores_raw_id(tmp_path: Path) -> None:
     text = path.read_text(encoding="utf-8")
     assert "t_private_session_123" not in text
     assert '"fallback_reason": null' in text
+    event = json.loads(text)
+    assert event["accepted_count"] == 0
+    assert event["rejected_count"] == 0
+    assert event["confidence_avg"] == 0.0
 
 
 def test_hook_persists_external_loaded_skills(monkeypatch, tmp_path: Path) -> None:
