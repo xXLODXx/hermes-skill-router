@@ -8,12 +8,15 @@ existing dashboard/compatibility tests migrate.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from . import engine
 from .v2.audit import record as record_audit
 from .v2.catalog import scan_catalog
+from .v2.evidence import tokens
 from .v2.learning import output_learning_enabled
+from .v2.models import Evidence
 from .v2.render import render
 from .v2.selector import select
 from .v2.session import SessionStore
@@ -28,6 +31,41 @@ def _loaded_names(kwargs: dict) -> set[str]:
     if isinstance(values, str):
         return {values}
     return {str(value) for value in values if value}
+
+
+def _matrix_path() -> Path | None:
+    """Resolve the active workflow matrix without requiring a config edit."""
+    configured = os.environ.get("SKILL_ROUTER_MATRIX_PATH")
+    if configured:
+        return Path(configured)
+    candidate = engine.hermes_home() / "skills" / "software-development" / "workflow-router" / "references" / "workflow-matrix.md"
+    return candidate if candidate.exists() else None
+
+
+def _matrix_evidence(message: str) -> dict[str, tuple[Evidence, ...]]:
+    path = _matrix_path()
+    if path is None:
+        return {}
+    try:
+        topics = engine.parse_matrix(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError):
+        return {}
+    message_folded = message.casefold()
+    message_tokens = tokens(message)
+    result: dict[str, list[Evidence]] = {}
+    for topic in topics:
+        keywords = [str(keyword).casefold() for keyword in topic.get("keywords", [])]
+        matched = any(keyword in message_folded or set(tokens(keyword)) & message_tokens for keyword in keywords)
+        if not matched:
+            continue
+        topic_name = str(topic.get("name", "unbenannt"))
+        for role, field in (("Pflicht", "pflicht"), ("Optional", "optional")):
+            for name in topic.get(field, []):
+                canonical = str(name).casefold()
+                result.setdefault(canonical, []).append(
+                    Evidence("matrix", topic_name, 6.0 if role == "Pflicht" else 4.0, f"Matrix: {role}")
+                )
+    return {name: tuple(items) for name, items in result.items()}
 
 
 def register(ctx):
@@ -45,6 +83,7 @@ def register(ctx):
             user_message or "",
             skills,
             already_loaded=loaded,
+            matrix=_matrix_evidence(user_message or ""),
         )
         names = tuple(item.skill.canonical_name for item in decision.candidates)
         if names == turn.last_signature:

@@ -18,7 +18,7 @@ def _session_hash(session_id: str) -> str:
     return hashlib.sha256(session_id.encode("utf-8")).hexdigest()[:16]
 
 
-def record(path: Path, session_id: str, decision: RoutingDecision, *, plugin_version: str = "0.7.0") -> None:
+def record(path: Path, session_id: str, decision: RoutingDecision, *, plugin_version: str = "0.7.1") -> None:
     accepted = list(decision.candidates)
     evidence_kinds = Counter(
         evidence.kind

@@ -46,11 +46,11 @@ This plugin closes that gap with three mechanisms:
 
 ## V2 routing and diagnostics
 
-Version 0.7.0 uses a precision-first selector for the live routing path:
+Version 0.7.1 uses a precision-first selector for the live routing path:
 
 - Exact name, tag, description, matrix and validated learned signals outrank generic matches.
 - Language-neutral subword/stem and compound evidence is supporting evidence only; it cannot trigger an injection by itself.
-- At most three candidates are injected per event. Candidates over the budget are recorded as rejections rather than silently expanding the prompt.
+- At most three automatically discovered candidates are injected per event. Matrix-declared **Required/Pflicht** skills are exempt from that discovery budget, so mandatory workflow skills cannot be silently dropped; optional and inferred candidates remain capped and are recorded as rejections.
 - If no candidate reaches the confidence gate, the router emits a short fail-safe fallback instead of loading unrelated skills.
 - Sparse observer hook payloads are accepted safely; observer hooks do not block the agent turn.
 
@@ -96,7 +96,7 @@ Restart Hermes (CLI/TUI/desktop) — plugins load at process start.
 
 | Setting | Default | Description |
 |---|---|---|
-| `SKILL_ROUTER_MATRIX_PATH` (env) | unset | Optional path to a routing-matrix markdown file (see format below). Without it, the plugin works purely on tag/description matching. |
+| `SKILL_ROUTER_MATRIX_PATH` (env) | active profile workflow matrix | Optional path to a routing-matrix markdown file (see format below). If unset, the active profile's `skills/software-development/workflow-router/references/workflow-matrix.md` is used when present. |
 | `HERMES_HOME` (env) | `~/.hermes` | Where skills live. |
 
 ### Routing-matrix format (optional)
