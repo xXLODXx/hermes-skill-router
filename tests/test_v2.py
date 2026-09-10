@@ -5,7 +5,7 @@ from pathlib import Path
 
 from skill_router.v2.audit import record
 from skill_router.v2.catalog import scan_catalog
-from skill_router.v2.models import RoutingDecision, SkillRecord
+from skill_router.v2.models import Evidence, RoutingDecision, SkillRecord
 from skill_router.v2.render import render
 from skill_router.v2.selector import select
 from skill_router.v2.session import SessionStore
@@ -129,3 +129,59 @@ def test_isolated_subword_signal_is_rejected() -> None:
     decision = select("converting", [skill])
     assert not decision.candidates
     assert decision.rejected[0].reason == "isoliertes Stamm-/Teilwortsignal"
+
+
+def test_matrix_required_skill_is_selected_even_without_name_tag_match() -> None:
+    skill = SkillRecord("skill-artifact-validation", "software-development")
+    decision = select(
+        "prüfe den skill-router und führe einen skill-audit durch",
+        [skill],
+        matrix={
+            "skill-artifact-validation": (
+                Evidence("matrix", "Skill-Pflege / Curator-Update", 6.0, "Matrix: Pflicht"),
+            )
+        },
+    )
+    assert [item.skill.name for item in decision.candidates] == ["skill-artifact-validation"]
+    assert decision.candidates[0].decision == "required"
+    assert any(item.kind == "matrix" for item in decision.candidates[0].evidence)
+
+
+def test_matrix_required_candidates_are_not_lost_to_discovery_budget() -> None:
+    skills = [SkillRecord(f"required-{index}", "test") for index in range(4)]
+    matrix = {
+        skill.name: (Evidence("matrix", "Topic", 6.0, "Matrix: Pflicht"),)
+        for skill in skills
+    }
+    decision = select("topic", skills, matrix=matrix)
+    assert [item.skill.name for item in decision.candidates] == [f"required-{i}" for i in range(4)]
+
+
+def test_hook_uses_profile_workflow_matrix(monkeypatch, tmp_path: Path) -> None:
+    import skill_router
+
+    matrix = tmp_path / "skills" / "software-development" / "workflow-router" / "references" / "workflow-matrix.md"
+    matrix.parent.mkdir(parents=True)
+    matrix.write_text(
+        "## Thema 1: Skill-Pflege\n\n**Keywords:** `skill-audit`, `curator`\n\n"
+        "| Kategorie | Skills |\n|---|---|\n"
+        "| **Pflicht** | `skill-artifact-validation` |\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(skill_router.engine, "hermes_home", lambda: tmp_path)
+    evidence = skill_router._matrix_evidence("bitte skill-audit durchführen")
+    assert evidence["skill-artifact-validation"][0].kind == "matrix"
+    assert evidence["skill-artifact-validation"][0].detail == "Matrix: Pflicht"
+
+
+def test_catalog_follows_profile_skill_symlinks(tmp_path: Path) -> None:
+    target = tmp_path / "default" / "software-development" / "linked-skill"
+    target.mkdir(parents=True)
+    (target / "SKILL.md").write_text(
+        "---\nname: linked-skill\ndescription: Follow symlinked skills.\n---\n",
+        encoding="utf-8",
+    )
+    profile = tmp_path / "profile" / "skills" / "software-development"
+    profile.mkdir(parents=True)
+    (profile / "linked-skill").symlink_to(target, target_is_directory=True)
+    assert [item.name for item in scan_catalog(tmp_path / "profile" / "skills")] == ["linked-skill"]

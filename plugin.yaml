@@ -1,5 +1,5 @@
 name: skill-router
-version: "0.7.0"
+version: "0.7.1"
 description: Evidence-based, session-safe skill routing with auditable decisions and opt-in learning
 provides_hooks:
   - pre_llm_call

@@ -129,7 +129,7 @@ def runtime_metrics() -> dict:
             "fallback": event.get("fallback_reason"),
         })
     return {
-        "version": "0.7.0",
+        "version": "0.7.1",
         "events": len(events),
         "injections": injections,
         "fallbacks": fallbacks,

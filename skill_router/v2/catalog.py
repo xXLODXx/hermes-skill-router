@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 
@@ -33,7 +34,8 @@ def scan_catalog(skills_dir: Path) -> tuple[SkillRecord, ...]:
     records: dict[str, SkillRecord] = {}
     if not skills_dir.is_dir():
         return ()
-    for path in sorted(skills_dir.rglob("SKILL.md")):
+    paths = [Path(root) / filename for root, _, filenames in os.walk(skills_dir, followlinks=True) for filename in filenames if filename == "SKILL.md"]
+    for path in sorted(paths):
         try:
             text = path.read_text(encoding="utf-8")
         except OSError:
