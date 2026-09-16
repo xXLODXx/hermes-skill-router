@@ -3,6 +3,20 @@
 Alle nennenswerten Änderungen am Skill-Router-Plugin. Format orientiert sich an
 Keep a Changelog; Versionierung: SemVer-PoC (0.x).
 
+## 0.8.1 — 2026-09-16
+
+### Fixed
+- **Audit-Ablage folgt der Session:** Records werden gegen die Installation
+  des Session-Profils aufgelöst (`<home>/plugins/skill-router/data/`, Marker:
+  `plugin.yaml`), Fallback bleibt die geladene Kopie. In Multiplex-Hosts
+  (ein Prozess, mehrere Profile) landeten Fremd-Sessions zuvor im
+  Datenordner der ausführenden Kopie; seit 0.800 waren die Routing-Daten
+  korrekt session-gebunden, die Ablage zieht jetzt nach.
+
+### Added
+- Tests: Pfad-Auflösung (Session-Install bevorzugt; Fallback ohne Install)
+  und End-to-End-Record im Session-Install (RED→GRÜN: 7 → 0 Fehler).
+
 ## 0.800 — 2026-09-16
 
 ### Added

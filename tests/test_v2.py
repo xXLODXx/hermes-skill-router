@@ -41,7 +41,7 @@ def _registered(monkeypatch, tmp_path: Path) -> _FakeContext:
     import skill_router
 
     monkeypatch.setattr(skill_router.engine, "hermes_home", lambda: tmp_path)
-    monkeypatch.setattr(skill_router, "_AUDIT_PATH", tmp_path / "data" / "audit.jsonl")
+    monkeypatch.setattr(skill_router, "_audit_path", lambda: tmp_path / "data" / "audit.jsonl")
     _skills(tmp_path)
     context = _FakeContext()
     skill_router.register(context)
@@ -130,6 +130,43 @@ def test_audit_event_is_enriched(tmp_path: Path) -> None:
     assert event["rendered_chars"] == 123
     assert event["top_rejected"] == []
     assert isinstance(event["plugin_version"], str) and event["plugin_version"]
+
+
+def test_audit_path_prefers_session_home_install(monkeypatch, tmp_path: Path) -> None:
+    """Multi-profile hosts: records resolve to the session's own install."""
+    import skill_router
+
+    install = tmp_path / "plugins" / "skill-router"
+    install.mkdir(parents=True)
+    (install / "plugin.yaml").write_text('name: skill-router\nversion: "0"\n', encoding="utf-8")
+    monkeypatch.setattr(skill_router.engine, "hermes_home", lambda: tmp_path)
+    assert skill_router._audit_path() == install / "data" / "v2_injections.jsonl"
+
+
+def test_audit_path_falls_back_without_profile_install(monkeypatch, tmp_path: Path) -> None:
+    """A home without a skill-router install keeps the loaded copy's directory."""
+    import skill_router
+
+    monkeypatch.setattr(skill_router.engine, "hermes_home", lambda: tmp_path)
+    assert skill_router._audit_path() == skill_router._PLUGIN_DIR / "data" / "v2_injections.jsonl"
+
+
+def test_hook_records_into_session_home_install(monkeypatch, tmp_path: Path) -> None:
+    """End-to-end: the hook's audit event lands in the session home's install."""
+    import skill_router
+
+    install = tmp_path / "plugins" / "skill-router"
+    install.mkdir(parents=True)
+    (install / "plugin.yaml").write_text('name: skill-router\nversion: "0"\n', encoding="utf-8")
+    monkeypatch.setattr(skill_router.engine, "hermes_home", lambda: tmp_path)
+    _skills(tmp_path)
+    context = _FakeContext()
+    skill_router.register(context)
+    context.hooks["pre_llm_call"]("extract PDF OCR", "s-session-home")
+    lines = (install / "data" / "v2_injections.jsonl").read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 1
+    event = json.loads(lines[0])
+    assert event["catalog_size"] == 2
 
 
 def test_hook_persists_external_loaded_skills(monkeypatch, tmp_path: Path) -> None:

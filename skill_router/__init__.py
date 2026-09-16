@@ -22,8 +22,22 @@ from .v2.selector import select
 from .v2.session import SessionStore
 
 _PLUGIN_DIR = Path(__file__).resolve().parent.parent
-_AUDIT_PATH = _PLUGIN_DIR / "data" / "v2_injections.jsonl"
 _STORE = SessionStore()
+
+
+def _audit_path() -> Path:
+    """Audit target: the session's own profile install when one exists.
+
+    One host process may serve sessions from several homes while running the
+    loaded copy of the plugin; writing to that copy's directory would file
+    another profile's sessions there. Resolve the session home first (host
+    context → env → layout, via ``engine.hermes_home()``) and fall back to
+    this copy for homes without a skill-router install.
+    """
+    install = engine.hermes_home() / "plugins" / "skill-router"
+    if (install / "plugin.yaml").is_file():
+        return install / "data" / "v2_injections.jsonl"
+    return _PLUGIN_DIR / "data" / "v2_injections.jsonl"
 
 # Matrix parse cache: parsed topics per (path, mtime_ns, size). The matrix is
 # re-read only when the file actually changed — the hook runs every turn.
@@ -168,7 +182,7 @@ def register(ctx):
 
         def _record(emitted: bool = False) -> None:
             record_audit(
-                _AUDIT_PATH,
+                _audit_path(),
                 session_id,
                 decision,
                 catalog_size=len(skills),

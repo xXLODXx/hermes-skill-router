@@ -15,6 +15,13 @@ self-learning engine is retained as a legacy compatibility layer.)
 - productivity/calendar-sync — recommended, 0.52 (tag)
 ```
 
+## What's new in 0.8.1
+
+- **Session-scoped audit placement** — on multi-profile hosts (one process serving several
+  profiles), audit records now resolve to the **session's own profile install**
+  (`<home>/plugins/skill-router/data/`) and only fall back to the loaded copy, so one
+  profile's routing history never accumulates under another profile's data directory.
+
 ## What's new in 0.800
 
 - **Profile-safe home resolution** — the active home is resolved through the host's
