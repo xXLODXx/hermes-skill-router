@@ -39,6 +39,7 @@ from skill_router.engine import (
     lift,
     word_status,
 )
+from skill_router.version import plugin_version as _plugin_version
 
 log = logging.getLogger(__name__)
 router = APIRouter()
@@ -110,6 +111,11 @@ def runtime_metrics() -> dict:
     injections = sum(bool(e.get("accepted")) for e in events)
     fallbacks = sum(bool(e.get("fallback_reason")) for e in events)
     budget = sum(int(e.get("budget_rejections", 0)) for e in events)
+    rescued = sum(bool(e.get("rescue")) for e in events)
+    profiles: dict[str, int] = {}
+    for event in events:
+        label = str(event.get("profile") or "unknown")
+        profiles[label] = profiles.get(label, 0) + 1
     chars = [int(e.get("estimated_chars", 0)) for e in events]
     confidence = [float(e.get("confidence_avg", 0.0)) for e in events]
     evidence: dict[str, int] = {}
@@ -127,9 +133,12 @@ def runtime_metrics() -> dict:
             "estimated_chars": int(event.get("estimated_chars", 0)),
             "confidence": round(float(event.get("confidence_avg", 0.0)), 2),
             "fallback": event.get("fallback_reason"),
+            "profile": event.get("profile"),
+            "catalog_size": int(event.get("catalog_size", 0)),
+            "rescue": bool(event.get("rescue")),
         })
     return {
-        "version": "0.7.1",
+        "version": _plugin_version(),
         "events": len(events),
         "injections": injections,
         "fallbacks": fallbacks,
@@ -137,6 +146,8 @@ def runtime_metrics() -> dict:
         "accepted_candidates": accepted,
         "rejected_candidates": rejected,
         "budget_rejections": budget,
+        "rescued_events": rescued,
+        "profiles": dict(sorted(profiles.items())),
         "avg_candidates": round(accepted / len(events), 2) if events else 0.0,
         "avg_chars": round(sum(chars) / len(chars), 1) if chars else 0.0,
         "avg_confidence": round(sum(confidence) / len(confidence), 3) if confidence else 0.0,

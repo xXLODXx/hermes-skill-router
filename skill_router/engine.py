@@ -117,8 +117,48 @@ STOPWORDS = {
 
 # ── Pfade ────────────────────────────────────────────────────────────────────
 
+def _constants_home() -> Path | None:
+    """Context-local Hermes home from the host, when running inside Hermes.
+
+    Call-time import on purpose: the plugin loader may import this module
+    outside the host package, and standalone use (tests, tooling) must not
+    require the host. ``get_hermes_home()`` honours the per-session override
+    of a multiplex process, so routing follows the active profile instead of
+    leaking another profile's home through ``os.environ`` (verified failure
+    mode 2026-09-16: a default-profile session was routed with the app
+    profile's catalog).
+    """
+    try:
+        from hermes_constants import get_hermes_home  # type: ignore[import-not-found]
+    except ImportError:
+        return None
+    try:
+        home = get_hermes_home()
+    except Exception:  # noqa: BLE001 — host API boundary: any failure must fall back
+        return None
+    return Path(home)
+
+
+def _plugin_layout_home() -> Path | None:
+    """Derive the owning home from this file's location (``<home>/plugins/<name>``)."""
+    plugin_dir = Path(__file__).resolve().parent.parent
+    if plugin_dir.parent.name == "plugins":
+        return plugin_dir.parent.parent
+    return None
+
+
 def hermes_home() -> Path:
-    return Path(os.environ.get("HERMES_HOME", str(Path.home() / ".hermes")))
+    """Active Hermes home: host override > env > plugin layout > default."""
+    home = _constants_home()
+    if home is not None:
+        return home
+    env = os.environ.get("HERMES_HOME", "").strip()
+    if env:
+        return Path(env)
+    derived = _plugin_layout_home()
+    if derived is not None:
+        return derived
+    return Path.home() / ".hermes"
 
 
 def default_matrix_path(home: Path | None = None) -> Path | None:

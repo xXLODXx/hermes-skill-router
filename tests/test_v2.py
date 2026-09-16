@@ -6,9 +6,19 @@ from pathlib import Path
 from skill_router.v2.audit import record
 from skill_router.v2.catalog import scan_catalog
 from skill_router.v2.models import Evidence, RoutingDecision, SkillRecord
-from skill_router.v2.render import render
+from skill_router.v2.render import FALLBACK, render
 from skill_router.v2.selector import select
 from skill_router.v2.session import SessionStore
+
+
+class _FakeContext:
+    """Minimal hook registry: name -> callback."""
+
+    def __init__(self) -> None:
+        self.hooks: dict = {}
+
+    def register_hook(self, name: str, callback) -> None:
+        self.hooks[name] = callback
 
 
 def _skills(tmp_path: Path) -> Path:
@@ -24,6 +34,18 @@ def _skills(tmp_path: Path) -> Path:
             encoding="utf-8",
         )
     return tmp_path / "skills"
+
+
+def _registered(monkeypatch, tmp_path: Path) -> _FakeContext:
+    """Register the plugin against a temp home with isolated audit output."""
+    import skill_router
+
+    monkeypatch.setattr(skill_router.engine, "hermes_home", lambda: tmp_path)
+    monkeypatch.setattr(skill_router, "_AUDIT_PATH", tmp_path / "data" / "audit.jsonl")
+    _skills(tmp_path)
+    context = _FakeContext()
+    skill_router.register(context)
+    return context
 
 
 def test_catalog_and_required_evidence(tmp_path: Path) -> None:
@@ -55,12 +77,23 @@ def test_session_store_isolation() -> None:
     assert store.size() == 2
 
 
-def test_render_contains_reasoned_candidates(tmp_path: Path) -> None:
+def test_render_is_compact_but_keeps_reasons(tmp_path: Path) -> None:
     decision = select("extract PDF OCR", scan_catalog(_skills(tmp_path)))
     output = render(decision)
     assert output is not None
+    assert output.splitlines()[0] == "## Skill Router v2"
     assert "pdf-extraction" in output
-    assert "evidence:" in output
+    # Kompaktformat: keine Label-Wörter, aber Evidenzarten bleiben sichtbar.
+    assert "confidence" not in output
+    assert "evidence:" not in output
+    assert "(" in output and ")" in output
+
+
+def test_plugin_version_matches_manifest() -> None:
+    from skill_router.version import plugin_version
+
+    manifest = (Path(__file__).resolve().parent.parent / "plugin.yaml").read_text(encoding="utf-8")
+    assert f'version: "{plugin_version()}"' in manifest
 
 
 def test_audit_hashes_session_and_never_stores_raw_id(tmp_path: Path) -> None:
@@ -75,21 +108,35 @@ def test_audit_hashes_session_and_never_stores_raw_id(tmp_path: Path) -> None:
     assert event["confidence_avg"] == 0.0
 
 
+def test_audit_event_is_enriched(tmp_path: Path) -> None:
+    path = tmp_path / "data" / "v2.jsonl"
+    record(
+        path,
+        "s-enriched",
+        RoutingDecision(),
+        catalog_size=42,
+        profile="app",
+        matrix_source="workflow-matrix.md",
+        rescue=True,
+        fallback_emitted=True,
+        rendered_chars=123,
+    )
+    event = json.loads(path.read_text(encoding="utf-8"))
+    assert event["catalog_size"] == 42
+    assert event["profile"] == "app"
+    assert event["matrix_source"] == "workflow-matrix.md"
+    assert event["rescue"] is True
+    assert event["fallback_emitted"] is True
+    assert event["rendered_chars"] == 123
+    assert event["top_rejected"] == []
+    assert isinstance(event["plugin_version"], str) and event["plugin_version"]
+
+
 def test_hook_persists_external_loaded_skills(monkeypatch, tmp_path: Path) -> None:
     """A loader-provided skill must remain excluded on the next turn."""
     import skill_router
 
-    class Context:
-        def __init__(self) -> None:
-            self.hooks = {}
-
-        def register_hook(self, name: str, callback) -> None:
-            self.hooks[name] = callback
-
-    monkeypatch.setattr(skill_router.engine, "hermes_home", lambda: tmp_path)
-    _skills(tmp_path)
-    context = Context()
-    skill_router.register(context)
+    context = _registered(monkeypatch, tmp_path)
     inject = context.hooks["pre_llm_call"]
     assert inject("prüfe Android emulator", "session-loaded", loaded_skills=["android-emulator"]) is None
     state = skill_router._STORE.get("session-loaded")
@@ -97,6 +144,62 @@ def test_hook_persists_external_loaded_skills(monkeypatch, tmp_path: Path) -> No
     assert "android-emulator" in state.already_loaded
     assert context.hooks["post_tool_call"]() is None
     assert context.hooks["post_llm_call"]() is None
+
+
+def test_fallback_hint_once_on_first_turn(monkeypatch, tmp_path: Path) -> None:
+    context = _registered(monkeypatch, tmp_path)
+    inject = context.hooks["pre_llm_call"]
+    first = inject("erzähle einen Witz", "s-fallback", is_first_turn=True)
+    assert first == {"context": FALLBACK}
+    # Zweiter leerer Turn: kein erneuter Hinweis.
+    assert inject("noch ein Witz", "s-fallback", is_first_turn=True) is None
+    # Ohne Erst-Turn-Flag wird nie emititiert.
+    assert inject("ein weiterer Witz", "s-fallback-2") is None
+
+
+def test_context_rescue_uses_buffered_results(monkeypatch, tmp_path: Path) -> None:
+    context = _registered(monkeypatch, tmp_path)
+    inject = context.hooks["pre_llm_call"]
+    tool_result = context.hooks["post_tool_call"]
+    llm = context.hooks["post_llm_call"]
+    assert inject("mach weiter", "s-rescue") is None
+    tool_result(
+        function_name="terminal",
+        result={"output": "Android emulator keyboard check tap targets"},
+        session_id="s-rescue",
+    )
+    llm(assistant_response="Der Android emulator braucht noch eine Keyboard-Prüfung.", session_id="s-rescue")
+    out = inject("mach weiter", "s-rescue")
+    assert out is not None
+    assert "android-emulator" in out["context"]
+    events = [
+        json.loads(line)
+        for line in (tmp_path / "data" / "audit.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert events[-1]["rescue"] is True
+
+
+def test_context_rescue_can_be_disabled(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("SKILL_ROUTER_CONTEXT_RESCUE", "0")
+    context = _registered(monkeypatch, tmp_path)
+    inject = context.hooks["pre_llm_call"]
+    tool_result = context.hooks["post_tool_call"]
+    tool_result(function_name="terminal", result={"output": "Android emulator keyboard"}, session_id="s-off")
+    assert inject("mach weiter", "s-off") is None
+
+
+def test_catalog_cache_still_sees_edits(tmp_path: Path) -> None:
+    skills = _skills(tmp_path)
+    first = scan_catalog(skills)
+    target = skills / "software-development" / "android-emulator" / "SKILL.md"
+    assert first[0].description.startswith("Test Android")
+    target.write_text(
+        "---\nname: android-emulator\ndescription: Updated description of the emulator skill.\n"
+        "metadata:\n  hermes:\n    tags: [Android]\n---\n",
+        encoding="utf-8",
+    )
+    second = scan_catalog(skills)
+    assert second[0].description.startswith("Updated")
 
 
 def test_candidate_budget_is_hard_capped() -> None:
@@ -169,9 +272,10 @@ def test_hook_uses_profile_workflow_matrix(monkeypatch, tmp_path: Path) -> None:
         encoding="utf-8",
     )
     monkeypatch.setattr(skill_router.engine, "hermes_home", lambda: tmp_path)
-    evidence = skill_router._matrix_evidence("bitte skill-audit durchführen")
+    evidence, source = skill_router._matrix_evidence("bitte skill-audit durchführen")
     assert evidence["skill-artifact-validation"][0].kind == "matrix"
     assert evidence["skill-artifact-validation"][0].detail == "Matrix: Pflicht"
+    assert source == "workflow-matrix.md"
 
 
 def test_catalog_follows_profile_skill_symlinks(tmp_path: Path) -> None:

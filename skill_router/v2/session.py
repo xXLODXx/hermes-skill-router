@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import threading
 import time
 from dataclasses import replace
@@ -10,9 +11,22 @@ from typing import Any, cast
 from .models import SessionTurn
 
 
+def _ttl_from_env() -> float:
+    """Session-state TTL; ``SKILL_ROUTER_SESSION_TTL`` overrides the 1h default."""
+    raw = os.environ.get("SKILL_ROUTER_SESSION_TTL", "").strip()
+    if raw:
+        try:
+            value = float(raw)
+        except ValueError:
+            value = 0.0
+        if value > 0:
+            return value
+    return 3600.0
+
+
 class SessionStore:
-    def __init__(self, ttl_seconds: float = 3600.0) -> None:
-        self._ttl = ttl_seconds
+    def __init__(self, ttl_seconds: float | None = None) -> None:
+        self._ttl = _ttl_from_env() if ttl_seconds is None else ttl_seconds
         self._items: dict[str, tuple[float, SessionTurn]] = {}
         self._lock = threading.RLock()
 
