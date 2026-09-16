@@ -15,6 +15,33 @@ self-learning engine is retained as a legacy compatibility layer.)
 - productivity/calendar-sync — recommended, 0.52 (tag)
 ```
 
+## What's new in 0.800
+
+- **Profile-safe home resolution** — the active home is resolved through the host's
+  context-local `get_hermes_home()` (fallbacks: `HERMES_HOME` → plugin layout →
+  `~/.hermes`), so every session routes with **its own profile's catalog**. Fixes a
+  verified cross-profile leak where a default-profile session could be routed with
+  another profile's skills.
+- **Token-optimized injections** — compact one-line format, measured **~25 % smaller**
+  (avg 369 → 276 characters across 236 live injections, ≈ ~70 tokens each); follow-ups
+  on the same topic stay at 0 tokens.
+- **Context rescue** — an empty follow-up turn (*"keep going"*) is re-checked against
+  the session's bounded recent context (last tool results + assistant reply — RAM-only,
+  hard caps; on by default, disable with `SKILL_ROUTER_CONTEXT_RESCUE=0`).
+- **First-turn fallback hint** — if nothing matches, the first turn gets one short hint;
+  later empty turns stay silent and unrelated skills are never loaded.
+- **Enriched audit** — every event now carries `catalog_size`, `profile`, `matrix_source`,
+  `rescue`, `fallback_emitted`, `rendered_chars` and the **top rejected candidates**
+  (name/score/reason) — configuration or binding problems become visible at a glance.
+- **Faster per turn** — catalog and matrix are cached per file revision (mtime + size);
+  no more re-reading of every `SKILL.md` on each turn.
+- **Single-source version** — read from `plugin.yaml` in audit and dashboard alike;
+  `SKILL_ROUTER_SESSION_TTL` makes the session-state lifetime configurable.
+- **Healthier tests** — suites no longer write into the real data directory; the mirror
+  test understands profile-local installations.
+
+Full details: [CHANGELOG.md](CHANGELOG.md).
+
 ## Why
 
 - The system-prompt skill index shows only name + truncated description —
