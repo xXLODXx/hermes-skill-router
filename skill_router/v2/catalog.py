@@ -13,6 +13,13 @@ _NAME = re.compile(r"^name:\s*[\"']?([^\"'\n]+?)[\"']?\s*$", re.MULTILINE)
 _DESC = re.compile(r"^description:\s*[\"']?(.*?)[\"']?\s*$", re.MULTILINE)
 _TAGS = re.compile(r"tags:\s*\[([^\]]*)\]", re.MULTILINE)
 
+# Parsed-record cache keyed by (path, mtime_ns, size): the hook scans the full
+# catalog every turn, so unchanged SKILL.md files are re-used instead of
+# re-read. Entries for edited files get new keys automatically; the cache is
+# cleared when it grows past the bound so deleted-skill keys cannot pile up.
+_PARSE_CACHE: dict[tuple[str, int, int], SkillRecord] = {}
+_MAX_PARSE_CACHE = 4096
+
 
 def _field(text: str, pattern: re.Pattern[str]) -> str:
     match = pattern.search(text)
@@ -30,28 +37,49 @@ def _tags(text: str) -> tuple[str, ...]:
     )
 
 
+def _parse_skill(path: Path, skills_dir: Path) -> SkillRecord | None:
+    try:
+        stat = path.stat()
+    except OSError:
+        return None
+    key = (str(path), stat.st_mtime_ns, stat.st_size)
+    cached = _PARSE_CACHE.get(key)
+    if cached is not None:
+        return cached
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    front = _FRONT.search(text)
+    metadata = front.group(1) if front else text[:2000]
+    name = (_field(metadata, _NAME) or path.parent.name).strip()
+    if not name:
+        return None
+    category = path.parent.parent.name if path.parent.parent != skills_dir else ""
+    record = SkillRecord(
+        name=name,
+        category=category,
+        description=_field(metadata, _DESC),
+        tags=_tags(metadata),
+        source=str(path),
+    )
+    if len(_PARSE_CACHE) >= _MAX_PARSE_CACHE:
+        _PARSE_CACHE.clear()
+    _PARSE_CACHE[key] = record
+    return record
+
+
 def scan_catalog(skills_dir: Path) -> tuple[SkillRecord, ...]:
     records: dict[str, SkillRecord] = {}
     if not skills_dir.is_dir():
         return ()
     paths = [Path(root) / filename for root, _, filenames in os.walk(skills_dir, followlinks=True) for filename in filenames if filename == "SKILL.md"]
     for path in sorted(paths):
-        try:
-            text = path.read_text(encoding="utf-8")
-        except OSError:
+        record = _parse_skill(path, skills_dir)
+        if record is None:
             continue
-        front = _FRONT.search(text)
-        metadata = front.group(1) if front else text[:2000]
-        name = _field(metadata, _NAME) or path.parent.name
-        name = name.strip()
-        if not name or name.casefold() in records:
+        key = record.canonical_name
+        if not key or key in records:
             continue
-        category = path.parent.parent.name if path.parent.parent != skills_dir else ""
-        records[name.casefold()] = SkillRecord(
-            name=name,
-            category=category,
-            description=_field(metadata, _DESC),
-            tags=_tags(metadata),
-            source=str(path),
-        )
+        records[key] = record
     return tuple(records[key] for key in sorted(records))

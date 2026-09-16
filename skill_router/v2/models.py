@@ -62,3 +62,4 @@ class SessionTurn:
     already_loaded: set[str] = field(default_factory=set)
     tool_results: list[object] = field(default_factory=list)
     last_response: str = ""
+    fallback_emitted: bool = False

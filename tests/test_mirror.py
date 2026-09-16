@@ -4,12 +4,16 @@ Nach der Altlast-Ablösung (Schritt 8) ist das Plugin ein Git-Clone des Repos.
 Ein stiller Drift (manuelle Eingriffe im Clone, abweichende Versionen) würde
 die Verhaltensgleichheit brechen — dieser Test erkennt das.
 
-Läuft NUR, wenn der installierte Clone existiert (~/.hermes/plugins/skill-router).
+Das Installationsziel wird pro Checkout bestimmt: läuft der Test bereits in
+einer Installation (<home>/plugins/skill-router — z. B. Profil-Kopien), ist
+sie ihr eigenes Ziel; sonst gilt die Maschinen-Installation
+(~/.hermes/plugins/skill-router). Override: SKILL_ROUTER_INSTALL_DIR.
 In CI (ohne Installation) wird der Test übersprungen.
 """
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -17,7 +21,19 @@ from pathlib import Path
 import pytest
 
 REPO_DIR = Path(__file__).resolve().parent.parent
-INSTALL_DIR = Path.home() / ".hermes" / "plugins" / "skill-router"
+
+
+def _resolve_install_dir() -> Path:
+    """Installationsziel dieses Checkouts (env-Override > Selbst-Erkennung > Default)."""
+    override = os.environ.get("SKILL_ROUTER_INSTALL_DIR", "").strip()
+    if override:
+        return Path(override)
+    if REPO_DIR.parent.name == "plugins":
+        return REPO_DIR
+    return Path.home() / ".hermes" / "plugins" / "skill-router"
+
+
+INSTALL_DIR = _resolve_install_dir()
 
 # Öffentliche Engine-Funktionen, deren Verhalten identisch sein muss
 ENGINE_FUNCTIONS = [
@@ -93,8 +109,9 @@ def test_installed_engine_behaves_like_repo() -> None:
     repo_head = _git_head(REPO_DIR)
     if install_head != repo_head:
         pytest.skip(
-            f"Clone steht auf {install_head} != Repo {repo_head} — "
-            "Verhaltenstest nur bei synchronem Stand sinnvoll"
+            f"Installation ({INSTALL_DIR}) steht auf {install_head} != "
+            f"Checkout {repo_head} — Verhaltenstest nur bei synchronem Stand "
+            "sinnvoll (bewusste Canary-Skews müssen anders verifiziert werden)"
         )
     # Installierte Engine importierbar + Funktionen vorhanden
     sys.path.insert(0, str(INSTALL_DIR))
