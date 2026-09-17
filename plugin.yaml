@@ -1,5 +1,5 @@
 name: skill-router
-version: "0.8.2"
+version: "0.8.3"
 description: Evidence-based, session-safe skill routing with auditable decisions, profile-safe homes and opt-in context rescue
 provides_hooks:
   - pre_llm_call

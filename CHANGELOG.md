@@ -3,6 +3,28 @@
 Alle nennenswerten Änderungen am Skill-Router-Plugin. Format orientiert sich an
 Keep a Changelog; Versionierung: SemVer-PoC (0.x).
 
+## 0.8.3 — 2026-09-17
+
+### Fixed
+- **Legacy-Scan folgt Symlinks:** `engine.scan_skills` (Dashboard-Cluster)
+  nutzte `rglob` und übersah Skills hinter Symlink-Verzeichnissen — im
+  Profil-Layout fehlten sie im Dashboard (ROT-Test gegen den Altstand belegt).
+  Jetzt `os.walk(followlinks=True)` + derselbe Walk-Cache wie im v2-Katalog.
+- **Toter Parameter entfernt:** `word_status(..., best_tool, ...)` nutzte den
+  Wert nie; Signatur und alle 9 Aufrufer (Dashboard + Tests) bereinigt.
+
+### Performance (gemessen am 195-Skill-Katalog)
+- **Baum-Walk TTL-gecacht** (`SKILL_ROUTER_SCAN_TTL`, Default 15 s, 0 = aus):
+  `scan_catalog` **18,5 ms → 0,8 ms** pro Turn; Inhaltsänderungen greifen
+  weiterhin sofort (per-File-stat), Neuzugänge ≤ TTL.
+- **Tokenizer memoisiert** (`lru_cache`, bounded): `select()` **20,4 → 14,9 ms**.
+- Turn-Pfad gesamt (scan + select): **~38,9 → ~15,7 ms (−60 %)**.
+- Dashboard-`runtime-metrics` jetzt mtime-gecacht (wie die übrigen Endpunkte).
+
+### Housekeeping
+- B007/C416 in Dashboard/Engine bereinigt; `zip(..., strict=False)` explizit
+  (bewusstes Kurz-Abbrechen dokumentiert).
+
 ## 0.8.2 — 2026-09-16
 
 ### Changed
