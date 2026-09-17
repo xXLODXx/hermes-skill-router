@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 from pathlib import Path
 
 # ── Konfiguration ────────────────────────────────────────────────────────────
@@ -527,7 +528,6 @@ def word_status(
     word: str,
     lexicon: dict,
     stats: dict,
-    best_tool: str | None = None,
     best_lift: float = 0.0,
     best_co: int = 0,
 ) -> str:
@@ -644,15 +644,55 @@ def _desc_words(desc: str, limit: int = 20) -> set[str]:
     return words
 
 
+_SCAN_PATHS_CACHE: dict[str, tuple[float, tuple[Path, ...]]] = {}
+_SCAN_TTL_DEFAULT = 15.0
+
+
+def _scan_ttl() -> float:
+    """Tree-Walk-TTL; ``SKILL_ROUTER_SCAN_TTL`` überschreibt (0 = immer laufen)."""
+    raw = os.environ.get("SKILL_ROUTER_SCAN_TTL", "").strip()
+    if raw:
+        try:
+            value = float(raw)
+        except ValueError:
+            return _SCAN_TTL_DEFAULT
+        if value >= 0:
+            return value
+    return _SCAN_TTL_DEFAULT
+
+
+def _scan_skill_paths(skills_dir: Path) -> list[Path]:
+    """SKILL.md-Pfade des Baums; der teure Walk (followlinks) ist TTL-gecacht."""
+    key = str(skills_dir)
+    now = time.monotonic()
+    cached = _SCAN_PATHS_CACHE.get(key)
+    if cached is not None and now - cached[0] < _scan_ttl():
+        return list(cached[1])
+    paths = tuple(
+        sorted(
+            Path(root) / filename
+            for root, _, filenames in os.walk(skills_dir, followlinks=True)
+            for filename in filenames
+            if filename == "SKILL.md"
+        )
+    )
+    if len(_SCAN_PATHS_CACHE) >= 16:
+        _SCAN_PATHS_CACHE.clear()
+    _SCAN_PATHS_CACHE[key] = (now, paths)
+    return list(paths)
+
+
 def scan_skills(skills_dir: Path) -> list[dict]:
     """Alle installierten Skills: Kategorie, Name, Tags, Description-Wörter.
 
-    Rekursiv (rglob) — findet auch Nicht-Standard-Strukturen (Pitfall 31):
-    Kategorie-Direktdatei (cat/SKILL.md) und 3-stufig (cat/subcat/skill/SKILL.md).
+    Rekursiv (os.walk, followlinks) — findet auch Nicht-Standard-Strukturen
+    (Pitfall 31): Kategorie-Direktdatei (cat/SKILL.md), 3-stufig
+    (cat/subcat/skill/SKILL.md) und Skills hinter Symlink-Verzeichnissen
+    (Profil-Layout); rglob übersah die Symlink-Fälle.
     Kategorie = Top-Level-Ordner unter skills_dir (Semantik unverändert).
     """
     skills = []
-    for md in sorted(skills_dir.rglob("SKILL.md")):
+    for md in _scan_skill_paths(skills_dir):
         rel = md.relative_to(skills_dir)
         if any(part.startswith(".") for part in rel.parts):
             continue
@@ -1006,7 +1046,7 @@ def build_injection(
     if skill_hits:
         parts.append("Suggested skills (not routed by matrix):")
         shown = skill_hits[:MAX_EXTRA_SKILLS]
-        for score, s in shown:
+        for _score, s in shown:
             tag_str = f" [{', '.join(s['tags'])}]" if s["tags"] else ""
             parts.append(f"- {s['cat']}/{s['name']}{tag_str}")
         rest = len(skill_hits) - len(shown)

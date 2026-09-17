@@ -15,6 +15,15 @@ self-learning engine is retained as a legacy compatibility layer.)
 - productivity/calendar-sync — recommended, 0.52 (tag)
 ```
 
+## What's new in 0.8.3
+
+- **Performance pass** — the skills-tree walk is TTL-cached (`SKILL_ROUTER_SCAN_TTL`,
+  default 15 s; content edits still apply instantly, new skills appear within the TTL):
+  `scan_catalog` **18.5 ms → 0.8 ms** per turn, tokenizer memoized (`select()`
+  20.4 → **14.9 ms**), the routing path drops from ~39 ms to **~16 ms** per message.
+  The dashboard's legacy skill scan now follows symlinked directories (profile layouts
+  were under-reported) and `runtime-metrics` is mtime-cached.
+
 ## What's new in 0.8.2
 
 - **Specificity-weighted evidence** — tag and description matches are scaled by their

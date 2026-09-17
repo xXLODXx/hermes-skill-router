@@ -805,6 +805,22 @@ def test_learn_from_result_respects_df_generic(env):
             assert g not in lexicon  # DF-generische nie gelernt
 
 
+def test_scan_skills_follows_symlinked_dirs(tmp_path) -> None:
+    """Profil-Layout: rglob übersah Skills hinter Symlink-Verzeichnissen,
+    os.walk(followlinks=True) findet sie (v2-Fix, hier im Legacy-Scan)."""
+    target = tmp_path / "shared" / "linked-skill"
+    target.mkdir(parents=True)
+    (target / "SKILL.md").write_text(
+        "---\nname: linked-skill\ndescription: Follow symlinked skills.\n---\n",
+        encoding="utf-8",
+    )
+    skills = tmp_path / "profile" / "skills"
+    (skills / "productivity").mkdir(parents=True)
+    (skills / "productivity" / "linked-skill").symlink_to(target, target_is_directory=True)
+    found = engine.scan_skills(skills)
+    assert [s["name"] for s in found] == ["linked-skill"]
+
+
 def test_scan_skills_finds_nonstandard_layouts(env):
     """Pitfall 31: scan_skills findet Kategorie-Direktdatei (cat/SKILL.md)
     und 3-stufige Strukturen (cat/subcat/skill/SKILL.md), Kategorie =

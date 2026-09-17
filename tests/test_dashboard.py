@@ -22,7 +22,7 @@ def test_word_status_beobachtet_unter_schwelle() -> None:
     """Zu wenige Tool-Calls: Lift ist noch nicht belastbar -> beobachtet."""
     lexicon = {"riverpod": {"flutter-dev": 3}}
     stats = {"total_calls": 10, "words": {"riverpod": 5}, "tools": {"flutter-dev": 4}}
-    assert engine.word_status("riverpod", lexicon, stats, "flutter-dev", 3.0, 3) == "beobachtet"
+    assert engine.word_status("riverpod", lexicon, stats, 3.0, 3) == "beobachtet"
 
 
 def test_word_status_kausal() -> None:
@@ -31,7 +31,7 @@ def test_word_status_kausal() -> None:
     stats = {"total_calls": 30, "words": {"riverpod": 6}, "tools": {"flutter-dev": 10}}
     lv = engine.lift("riverpod", "flutter-dev", lexicon, stats)
     assert lv >= engine.LIFT_THRESHOLD
-    assert engine.word_status("riverpod", lexicon, stats, "flutter-dev", lv, 4) == "kausal"
+    assert engine.word_status("riverpod", lexicon, stats, lv, 4) == "kausal"
 
 
 def test_word_status_generisch_zu_viele_skills() -> None:
@@ -48,7 +48,7 @@ def test_word_status_generisch_zu_viele_skills() -> None:
         "tools": {f"skill-{i}": 10 for i in range(engine.GENERIC_SKILL_THRESHOLD + 1)},
     }
     lv = engine.lift("kanban", "skill-0", lexicon, stats)
-    assert engine.word_status("kanban", lexicon, stats, "skill-0", lv, 3) == "generisch"
+    assert engine.word_status("kanban", lexicon, stats, lv, 3) == "generisch"
 
 
 def test_word_status_generisch_ohne_kausalitaet() -> None:
@@ -56,7 +56,7 @@ def test_word_status_generisch_ohne_kausalitaet() -> None:
     lexicon = {"wort": {"skill-a": 3, "skill-b": 3}}
     stats = {"total_calls": 40, "words": {"wort": 30}, "tools": {"skill-a": 30, "skill-b": 30}}
     lv = engine.lift("wort", "skill-a", lexicon, stats)
-    assert engine.word_status("wort", lexicon, stats, "skill-a", lv, 3) == "generisch"
+    assert engine.word_status("wort", lexicon, stats, lv, 3) == "generisch"
 
 
 # ── Dashboard-Endpunkte + Cache ────────────────────────────────────────────
