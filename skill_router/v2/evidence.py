@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from collections import Counter
 from collections.abc import Iterable
+from functools import lru_cache
 
 from .models import Evidence, SkillRecord
 
@@ -25,15 +26,22 @@ def _subword_relation(left: str, right: str) -> bool:
     if short in long:
         return True
     common_prefix = 0
-    for first, second in zip(short, long):
+    for first, second in zip(short, long, strict=False):
         if first != second:
             break
         common_prefix += 1
     return common_prefix >= max(_MIN_SUBWORD, len(short) // 2)
 
 
+@lru_cache(maxsize=8192)
+def _tokenize(text: str) -> frozenset[str]:
+    """Memoized tokenization — the catalog is re-tokenized on every turn."""
+    return frozenset(word.casefold() for word in _WORD.findall(text) if word.casefold() not in _STOP)
+
+
 def tokens(text: str) -> set[str]:
-    return {word.casefold() for word in _WORD.findall(text) if word.casefold() not in _STOP}
+    """Fresh mutable token set (the cache itself never leaks a shared object)."""
+    return set(_tokenize(text))
 
 
 def _field_tokens(values: Iterable[str]) -> set[str]:

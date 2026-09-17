@@ -54,6 +54,7 @@ _AUDIT_PATH = _PLUGIN_DIR / "data" / "v2_injections.jsonl"
 # mtime-Cache: nur bei Datei-Änderung neu berechnen (Overhead ≈ 0).
 _cache_mtime: tuple[float, float, float] | None = None
 _cache_overview: dict | None = None
+_cache_metrics: dict | None = None
 _cache_decision: dict | None = None
 
 
@@ -94,17 +95,22 @@ def _data_mtime() -> tuple[float, float, float]:
 
 def _invalidate_if_changed() -> None:
     """Cache invalidieren, wenn sich Lern- oder Auditdaten ändern."""
-    global _cache_mtime, _cache_overview, _cache_decision
+    global _cache_mtime, _cache_overview, _cache_metrics, _cache_decision
     mtime = _data_mtime()
     if mtime != _cache_mtime:
         _cache_mtime = mtime
         _cache_overview = None
+        _cache_metrics = None
         _cache_decision = None
 
 
 @router.get("/runtime-metrics")
 def runtime_metrics() -> dict:
-    """V2-Diagnosemetriken aus anonymisierten Routing-Events."""
+    """V2-Diagnosemetriken aus anonymisierten Routing-Events (mtime-gecacht)."""
+    global _cache_metrics
+    _invalidate_if_changed()
+    if _cache_metrics is not None:
+        return _cache_metrics
     events = _audit_events()
     accepted = sum(int(e.get("accepted_count", len(e.get("accepted", [])))) for e in events)
     rejected = sum(int(e.get("rejected_count", 0)) for e in events)
@@ -137,7 +143,7 @@ def runtime_metrics() -> dict:
             "catalog_size": int(event.get("catalog_size", 0)),
             "rescue": bool(event.get("rescue")),
         })
-    return {
+    result = {
         "version": _plugin_version(),
         "events": len(events),
         "injections": injections,
@@ -154,6 +160,8 @@ def runtime_metrics() -> dict:
         "evidence": dict(sorted(evidence.items())),
         "recent": recent,
     }
+    _cache_metrics = result
+    return result
 
 
 @router.get("/overview")
@@ -176,7 +184,7 @@ def overview() -> dict:
                 best_tool, best_lift, best_co = t, lv, co
         rows.append({
             "wort": w,
-            "status": word_status(w, lexicon, stats, best_tool, best_lift, best_co),
+            "status": word_status(w, lexicon, stats, best_lift, best_co),
             "lift": round(best_lift, 2),
             "count": sum(assoc.values()),
             "top_tool": best_tool,
@@ -216,7 +224,7 @@ def decision() -> dict:
     total_calls = stats.get("total_calls", 0)
 
     tool_counts: dict = {}
-    for w, assoc in lexicon.items():
+    for assoc in lexicon.values():
         for t, co in assoc.items():
             tool_counts[t] = tool_counts.get(t, 0) + co
 
@@ -230,7 +238,7 @@ def decision() -> dict:
                 continue
             lv = lift(w, t, lexicon, stats)
             item = {"word": w, "count": co, "lift": round(lv, 2)}
-            if word_status(w, lexicon, stats, t, lv, co) == "kausal":
+            if word_status(w, lexicon, stats, lv, co) == "kausal":
                 pro.append(item)
             else:
                 contra.append(item)  # 1x-Zufall oder unter der Lift-Schwelle
@@ -284,7 +292,7 @@ def clusters() -> dict:
     stats = _load_json(_STATS_PATH)
 
     # Kausale Cluster je Tool (nur Wörter mit Status 'kausal')
-    cluster_map = {t: assoc for t, assoc in _cluster_items(lexicon, stats)}
+    cluster_map = dict(_cluster_items(lexicon, stats))
 
     # Alle installierten Skills: Cluster-Daten (falls vorhanden) + Meta-Wörter
     try:
@@ -304,7 +312,7 @@ def clusters() -> dict:
                 "word": w,
                 "lift": round(lv, 2),
                 "count": co,
-                "status": word_status(w, lexicon, stats, name, lv, co),
+                "status": word_status(w, lexicon, stats, lv, co),
             })
         words.sort(key=lambda i: -i["lift"])
         rows.append({
@@ -330,7 +338,7 @@ def clusters() -> dict:
                 "word": w,
                 "lift": round(lv, 2),
                 "count": co,
-                "status": word_status(w, lexicon, stats, t, lv, co),
+                "status": word_status(w, lexicon, stats, lv, co),
             })
         words.sort(key=lambda i: -i["lift"])
         rows.append({
@@ -413,7 +421,7 @@ def _cluster_items(
             lv = lift(w, t, lexicon, stats)
             if (
                 lv >= LIFT_THRESHOLD
-                and word_status(w, lexicon, stats, t, lv, co) == "kausal"
+                and word_status(w, lexicon, stats, lv, co) == "kausal"
             ):
                 clusters_map.setdefault(t, []).append((w, co))
     return sorted(

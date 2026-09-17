@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import re
+import time
 from pathlib import Path
 
 from .models import SkillRecord
@@ -19,6 +20,49 @@ _TAGS = re.compile(r"tags:\s*\[([^\]]*)\]", re.MULTILINE)
 # cleared when it grows past the bound so deleted-skill keys cannot pile up.
 _PARSE_CACHE: dict[tuple[str, int, int], SkillRecord] = {}
 _MAX_PARSE_CACHE = 4096
+
+# Walk cache: enumerating the tree (followlinks) costs ~17 ms on a 195-skill
+# home and runs on every turn. The path list is refreshed at most every
+# ``SKILL_ROUTER_SCAN_TTL`` seconds (default 15; 0 = walk on every call).
+# Between walks, content edits are still picked up immediately: every known
+# path is stat-checked per call through the per-file parse cache above.
+_SCAN_CACHE: dict[str, tuple[float, tuple[Path, ...]]] = {}
+_SCAN_TTL_DEFAULT = 15.0
+_MAX_SCAN_CACHE = 16
+
+
+def _scan_ttl() -> float:
+    """Tree-walk TTL in seconds; ``SKILL_ROUTER_SCAN_TTL`` overrides (0 = off)."""
+    raw = os.environ.get("SKILL_ROUTER_SCAN_TTL", "").strip()
+    if raw:
+        try:
+            value = float(raw)
+        except ValueError:
+            return _SCAN_TTL_DEFAULT
+        if value >= 0:
+            return value
+    return _SCAN_TTL_DEFAULT
+
+
+def _skill_paths(skills_dir: Path) -> tuple[Path, ...]:
+    """Sorted SKILL.md paths of the tree; the walk itself is TTL-cached."""
+    key = str(skills_dir)
+    now = time.monotonic()
+    cached = _SCAN_CACHE.get(key)
+    if cached is not None and now - cached[0] < _scan_ttl():
+        return cached[1]
+    paths = tuple(
+        sorted(
+            Path(root) / filename
+            for root, _, filenames in os.walk(skills_dir, followlinks=True)
+            for filename in filenames
+            if filename == "SKILL.md"
+        )
+    )
+    if len(_SCAN_CACHE) >= _MAX_SCAN_CACHE:
+        _SCAN_CACHE.clear()
+    _SCAN_CACHE[key] = (now, paths)
+    return paths
 
 
 def _field(text: str, pattern: re.Pattern[str]) -> str:
@@ -72,9 +116,9 @@ def _parse_skill(path: Path, skills_dir: Path) -> SkillRecord | None:
 def scan_catalog(skills_dir: Path) -> tuple[SkillRecord, ...]:
     records: dict[str, SkillRecord] = {}
     if not skills_dir.is_dir():
+        _SCAN_CACHE.pop(str(skills_dir), None)
         return ()
-    paths = [Path(root) / filename for root, _, filenames in os.walk(skills_dir, followlinks=True) for filename in filenames if filename == "SKILL.md"]
-    for path in sorted(paths):
+    for path in _skill_paths(skills_dir):
         record = _parse_skill(path, skills_dir)
         if record is None:
             continue

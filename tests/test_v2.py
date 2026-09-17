@@ -360,3 +360,33 @@ def test_catalog_follows_profile_skill_symlinks(tmp_path: Path) -> None:
     profile.mkdir(parents=True)
     (profile / "linked-skill").symlink_to(target, target_is_directory=True)
     assert [item.name for item in scan_catalog(tmp_path / "profile" / "skills")] == ["linked-skill"]
+
+
+def test_tokens_returns_fresh_mutable_set() -> None:
+    """The tokenizer cache must never leak a shared, mutable object."""
+    from skill_router.v2 import evidence as evidence_mod
+
+    first = evidence_mod.tokens("prüfe den emulator")
+    assert "emulator" in first
+    first.add("mutiert")
+    assert "mutiert" not in evidence_mod.tokens("prüfe den emulator")
+
+
+def test_catalog_walk_cache_respects_ttl(monkeypatch, tmp_path: Path) -> None:
+    """Tree walk is TTL-cached; SKILL_ROUTER_SCAN_TTL=0 restores walk-per-call."""
+    from skill_router.v2 import catalog as catalog_mod
+
+    monkeypatch.delenv("SKILL_ROUTER_SCAN_TTL", raising=False)
+    skills = _skills(tmp_path)
+    assert len(catalog_mod.scan_catalog(skills)) == 2
+    fresh = skills / "software-development" / "fresh-skill"
+    fresh.mkdir(parents=True)
+    (fresh / "SKILL.md").write_text(
+        "---\nname: fresh-skill\ndescription: Neue Fähigkeit für Tests.\n---\n",
+        encoding="utf-8",
+    )
+    # Innerhalb der TTL bleibt die gecachte Wege-Liste aktiv; Inhaltsänderungen
+    # greifen sofort (stat), Neuzugänge erst nach dem nächsten Walk.
+    assert len(catalog_mod.scan_catalog(skills)) == 2
+    monkeypatch.setenv("SKILL_ROUTER_SCAN_TTL", "0")
+    assert len(catalog_mod.scan_catalog(skills)) == 3
