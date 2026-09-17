@@ -3,6 +3,25 @@
 Alle nennenswerten Änderungen am Skill-Router-Plugin. Format orientiert sich an
 Keep a Changelog; Versionierung: SemVer-PoC (0.x).
 
+## 0.8.2 — 2026-09-16
+
+### Changed
+- **Spezifitäts-Gewichtung (Katalog-Frequenz):** Tag-, Beschreibungs- und
+  Teilwort-Evidenz wird mit der Häufigkeit des getroffenen Katalog-Worts
+  skaliert (`min(1, 6/df)`). Ein Wort, das ein großer Teil des Katalogs teilt,
+  kann allein kein Kandidat mehr werden und verdrängt keine echten Treffer
+  mehr aus dem Budget. Namen bleiben unskaliert (explizite Signale).
+  Messung an den echten Katalogen (195/57/127 Skills, 14 Tasks): Passer pro
+  Task z. B. 35→26, 13→4, 18→12, 9→2; Budget-Verwerfungen entsprechend
+  (API-Audit 10→1); Top-Treffer in allen 42 Task×Katalog-Prüfungen stabil.
+
+### Added
+- Neuer Audit-Grund `generisches Signal (katalogweit häufig)` in `top_rejected`
+  — macht skaliert-verworfene Massenwörter für künftiges Tuning sichtbar.
+- Tests: generisches Tag allein triggert nicht; Massen-Tags verbrauchen kein
+  Budget; spezifisches Tag/Desc-Korroboration triggert weiter (RED→GRÜN:
+  3 → 0 Fehler).
+
 ## 0.8.1 — 2026-09-16
 
 ### Fixed

@@ -15,6 +15,15 @@ self-learning engine is retained as a legacy compatibility layer.)
 - productivity/calendar-sync — recommended, 0.52 (tag)
 ```
 
+## What's new in 0.8.2
+
+- **Specificity-weighted evidence** — tag and description matches are scaled by their
+  catalog frequency (`min(1.0, 6/df)`): a word shared by a large part of the catalog can
+  no longer pass the confidence gate on its own or crowd the candidate budget. Name
+  matches are treated as explicit signals and stay unscaled. Measured on the real
+  catalogs (195/57/127 skills): gate passers per task drop (e.g. 35→26, 13→4, 18→12,
+  9→2), budget rejections collapse (API audit: 10→1), and the top hits stay stable.
+
 ## What's new in 0.8.1
 
 - **Session-scoped audit placement** — on multi-profile hosts (one process serving several

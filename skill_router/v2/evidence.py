@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections import Counter
 from collections.abc import Iterable
 
 from .models import Evidence, SkillRecord
@@ -66,3 +67,24 @@ def evidence_for(message: str, skill: SkillRecord) -> tuple[Evidence, ...]:
             match = matches[0]
             result.append(Evidence("subword", word, weight, f"Teilwort/Stamm passt zu {kind} '{match}'"))
     return tuple(result)
+
+
+def document_frequencies(skills: Iterable[SkillRecord]) -> dict[str, Counter]:
+    """Catalog-wide document frequency per field: how many skills carry each word.
+
+    Specificity input for the selector: a tag/description word shared by a large
+    part of the catalog is weak evidence; a word carried by few skills is strong.
+    """
+    counts: dict[str, Counter] = {
+        "name": Counter(),
+        "tag": Counter(),
+        "description": Counter(),
+    }
+    for skill in skills:
+        for word in _field_tokens((skill.name,)):
+            counts["name"][word] += 1
+        for word in _field_tokens(skill.tags):
+            counts["tag"][word] += 1
+        for word in tokens(skill.description):
+            counts["description"][word] += 1
+    return counts

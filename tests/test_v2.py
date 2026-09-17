@@ -240,11 +240,9 @@ def test_catalog_cache_still_sees_edits(tmp_path: Path) -> None:
 
 
 def test_candidate_budget_is_hard_capped() -> None:
-    skills = [
-        SkillRecord(f"skill-{index}", "test", tags=("shared", "task"))
-        for index in range(8)
-    ]
-    decision = select("shared task", skills)
+    """Eight passing candidates must be truncated to three (explicit name matches)."""
+    skills = [SkillRecord(f"budget-{index}", "test") for index in range(8)]
+    decision = select("budget", skills)
     assert len(decision.candidates) == 3
     assert len(decision.rejected) == 5
     assert all(item.reason == "Kandidatenbudget überschritten" for item in decision.rejected)
@@ -269,6 +267,42 @@ def test_isolated_subword_signal_is_rejected() -> None:
     decision = select("converting", [skill])
     assert not decision.candidates
     assert decision.rejected[0].reason == "isoliertes Stamm-/Teilwortsignal"
+
+
+def _mass_tag_catalog(shared: int, tag: str = "commonword") -> list[SkillRecord]:
+    return [SkillRecord(f"pkg-{index}", "test", tags=(tag,)) for index in range(shared)]
+
+
+def test_generic_tag_word_cannot_trigger_alone() -> None:
+    """A tag word shared catalog-wide is not a route trigger by itself."""
+    decision = select("commonword", _mass_tag_catalog(12))
+    assert not decision.candidates
+    assert decision.fallback_reason == "no_high_confidence_match"
+    assert all(item.reason == "generisches Signal (katalogweit häufig)" for item in decision.rejected)
+
+
+def test_generic_tag_alone_does_not_consume_budget() -> None:
+    """Mass matches must not push real candidates out of the discovery budget."""
+    skills = _mass_tag_catalog(15) + [SkillRecord("specific", "test", tags=("commonword", "specialword"))]
+    decision = select("commonword specialword", skills)
+    assert [item.skill.name for item in decision.candidates] == ["specific"]
+    assert not any(item.reason == "Kandidatenbudget überschritten" for item in decision.rejected)
+
+
+def test_specific_tag_word_still_triggers() -> None:
+    """A tag word carried by few skills keeps full weight (a single word suffices)."""
+    skills = _mass_tag_catalog(10) + [SkillRecord("rare", "test", tags=("raretag",))]
+    decision = select("raretag", skills)
+    assert [item.skill.name for item in decision.candidates] == ["rare"]
+
+
+def test_generic_tag_with_specific_description_still_passes() -> None:
+    """Corroborating specific evidence rescues a generic tag match."""
+    skill = SkillRecord(
+        "guarded", "test", tags=("commonword",), description="Spezialisierte Prüfung von Randfällen"
+    )
+    decision = select("commonword spezialisierte randfällen", _mass_tag_catalog(12) + [skill])
+    assert [item.skill.name for item in decision.candidates] == ["guarded"]
 
 
 def test_matrix_required_skill_is_selected_even_without_name_tag_match() -> None:
