@@ -15,6 +15,20 @@ self-learning engine is retained as a legacy compatibility layer.)
 - productivity/calendar-sync — recommended, 0.52 (tag)
 ```
 
+## What's new in 0.8.4
+
+- **Ranking confidence no longer saturates** — confidence now uses a bounded,
+  strictly monotonic squash of the calibrated evidence signal instead of a
+  hard `0.99` ceiling. Higher calibrated evidence therefore remains visible to
+  consumers, while the existing cross-kind corroboration preference is
+  retained.
+- **Raw scores are inspectable** — `CandidateDecision` now exposes `score`
+  and `exact_score` alongside confidence, and audit records include accepted
+  score aggregates plus raw scores for top rejected candidates.
+- **Regression coverage** — tests cover former ceiling collisions and the
+  ranking boundary where corroborated multi-kind evidence should outrank a
+  slightly larger single-kind score.
+
 ## What's new in 0.8.3
 
 - **Performance pass** — the skills-tree walk is TTL-cached (`SKILL_ROUTER_SCAN_TTL`,
