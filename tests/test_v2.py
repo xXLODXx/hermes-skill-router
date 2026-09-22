@@ -89,6 +89,39 @@ def test_render_is_compact_but_keeps_reasons(tmp_path: Path) -> None:
     assert "(" in output and ")" in output
 
 
+def test_confidence_is_monotonic_and_exposes_raw_scores_above_the_old_ceiling() -> None:
+    """High-scoring candidates must remain distinguishable to consumers."""
+    skills = [
+        SkillRecord("codex", "test", tags=("refactor", "module", "analysis"), description="review"),
+        SkillRecord("automation", "test", tags=("codex", "refactor", "module"), description="review"),
+    ]
+
+    decision = select("codex refactor module analysis review", skills)
+
+    assert [item.skill.name for item in decision.candidates] == ["codex", "automation"]
+    first, second = decision.candidates
+    assert first.score == 15.0
+    assert second.score == 10.0
+    assert first.exact_score == first.score
+    assert second.exact_score == second.score
+    assert 0.0 < second.confidence < first.confidence < 1.0
+
+
+def test_confidence_preserves_the_cross_kind_corroboration_bonus() -> None:
+    """Corroborating fields must still outrank an otherwise higher single-field score."""
+    skills = [
+        SkillRecord("single-field", "test", tags=("alpha", "beta", "gamma")),
+        SkillRecord("delta", "test", tags=("alpha",)),
+    ]
+
+    decision = select("alpha beta gamma delta", skills)
+
+    assert [item.skill.name for item in decision.candidates] == ["delta", "single-field"]
+    assert decision.candidates[0].score == 8.0
+    assert decision.candidates[1].score == 9.0
+    assert decision.candidates[0].confidence > decision.candidates[1].confidence
+
+
 def test_plugin_version_matches_manifest() -> None:
     from skill_router.version import plugin_version
 
@@ -106,6 +139,7 @@ def test_audit_hashes_session_and_never_stores_raw_id(tmp_path: Path) -> None:
     assert event["accepted_count"] == 0
     assert event["rejected_count"] == 0
     assert event["confidence_avg"] == 0.0
+    assert event["score_avg"] == 0.0
 
 
 def test_audit_event_is_enriched(tmp_path: Path) -> None:
@@ -129,6 +163,8 @@ def test_audit_event_is_enriched(tmp_path: Path) -> None:
     assert event["fallback_emitted"] is True
     assert event["rendered_chars"] == 123
     assert event["top_rejected"] == []
+    assert event["score_max"] == 0.0
+    assert event["score_min"] == 0.0
     assert isinstance(event["plugin_version"], str) and event["plugin_version"]
 
 

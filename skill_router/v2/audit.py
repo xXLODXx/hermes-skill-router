@@ -27,6 +27,7 @@ def _top_rejected(decision: RoutingDecision) -> list[dict]:
         {
             "name": item.skill.name[:64],
             "confidence": round(item.confidence, 2),
+            "score": round(item.score, 2),
             "reason": item.reason[:48],
         }
         for item in ranked[:_MAX_REJECTED]
@@ -54,6 +55,7 @@ def record(
         for evidence in item.evidence
     )
     confidence = [item.confidence for item in accepted]
+    scores = [item.score for item in accepted]
     budget_rejections = sum(item.reason == "Kandidatenbudget überschritten" for item in decision.rejected)
     event = {
         "ts": time.time(),
@@ -73,6 +75,9 @@ def record(
         "confidence_max": max(confidence, default=0.0),
         "confidence_min": min(confidence, default=0.0),
         "confidence_avg": sum(confidence) / len(confidence) if confidence else 0.0,
+        "score_max": max(scores, default=0.0),
+        "score_min": min(scores, default=0.0),
+        "score_avg": sum(scores) / len(scores) if scores else 0.0,
         "estimated_chars": sum(len(item.skill.name) + 48 for item in accepted),
         "rendered_chars": int(rendered_chars),
         "top_rejected": _top_rejected(decision),

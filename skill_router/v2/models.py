@@ -38,6 +38,8 @@ class CandidateDecision:
     evidence: tuple[Evidence, ...] = ()
     reason: str = ""
     already_loaded: bool = False
+    score: float = 0.0
+    exact_score: float = 0.0
 
 
 @dataclass(frozen=True)

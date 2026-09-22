@@ -3,6 +3,25 @@
 Alle nennenswerten Änderungen am Skill-Router-Plugin. Format orientiert sich an
 Keep a Changelog; Versionierung: SemVer-PoC (0.x).
 
+## 0.8.4 — 2026-09-22
+
+### Fixed
+- **Confidence-Decke entfernt:** Die v2-Confidence saturierte ab starken
+  Evidenzwerten bei `0.99`, wodurch Downstream-Consumer Top-1 und Top-2 nicht
+  mehr unterscheiden konnten. Sie ist jetzt eine begrenzte, strikt monotone
+  Transformation des kalibrierten Evidenzsignals und bleibt unter 1.
+- **Korroborations-Rangfolge bewahrt:** Der frühere +0,12-Bonus für Evidenz aus
+  mehreren Feldarten bleibt als äquivalenter +1,2-Bonus im kalibrierten Score
+  erhalten; die Discovery-Budget-Reihenfolge regressiert dadurch nicht.
+
+### Added
+- `CandidateDecision.score` und `CandidateDecision.exact_score` stellen
+  Consumern unveränderte bzw. Teilwort-bereinigte Scores bereit (mit Defaults
+  am Ende der Datenklasse, daher positionskompatibel).
+- Audit-Events führen `score_min`, `score_max` und `score_avg`; Top-Rejects
+  enthalten ihren Rohscore.
+- Tests für Ceiling-Kollisionen und die Cross-Kind-Korroborationsgrenze.
+
 ## 0.8.3 — 2026-09-17
 
 ### Fixed
