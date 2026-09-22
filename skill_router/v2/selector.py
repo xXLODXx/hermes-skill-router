@@ -67,6 +67,12 @@ def _has_specific_signal(evidence: Iterable[Evidence], dfs: Mapping[str, Mapping
     return False
 
 
+def _confidence(score: float, distinct_kind_count: int = 0) -> float:
+    """Map the calibrated evidence score into a strictly monotonic (0, 1) range."""
+    calibrated_score = score + (1.2 if distinct_kind_count > 1 else 0.0)
+    return calibrated_score / (calibrated_score + 6.0) if calibrated_score > 0 else 0.0
+
+
 def _learned_evidence(message: str, skill_name: str, learned: Mapping[str, Mapping[str, int]]) -> tuple[Evidence, ...]:
     from .evidence import tokens
 
@@ -104,11 +110,23 @@ def select(
             + _learned_evidence(message, canonical, learned)
             + matrix.get(canonical, ())
         )
+        score = sum(item.weight for item in evidence)
+        exact_score = sum(item.weight for item in evidence if item.kind != "subword")
         is_loaded = canonical in loaded
         if is_loaded:
-            rejected.append(CandidateDecision(skill, "reject", 1.0, evidence, "bereits systemseitig geladen", True))
+            rejected.append(
+                CandidateDecision(
+                    skill,
+                    "reject",
+                    1.0,
+                    evidence,
+                    "bereits systemseitig geladen",
+                    True,
+                    score,
+                    exact_score,
+                )
+            )
             continue
-        score = sum(item.weight for item in evidence)
         distinct_kinds = {item.kind for item in evidence}
         has_exact_evidence = any(item.kind in {"name", "tag", "description", "learned", "matrix"} for item in evidence)
         is_matrix_required = any(item.kind == "matrix" and "Pflicht" in item.detail for item in evidence)
@@ -119,19 +137,34 @@ def select(
                 reason = "generisches Signal (katalogweit häufig)"
             else:
                 reason = "keine ausreichende Evidenz"
-            rejected.append(CandidateDecision(skill, "reject", score / 10, evidence, reason))
+            rejected.append(
+                CandidateDecision(
+                    skill,
+                    "reject",
+                    _confidence(score, len(distinct_kinds)),
+                    evidence,
+                    reason,
+                    score=score,
+                    exact_score=exact_score,
+                )
+            )
             continue
-        confidence = min(0.99, score / 10 + (0.12 if len(distinct_kinds) > 1 else 0.0))
+        confidence = _confidence(score, len(distinct_kinds))
         decision: DecisionKind = "required" if is_matrix_required or any(item.kind == "name" for item in evidence) else "recommended"
-        candidates.append(CandidateDecision(skill, decision, confidence, evidence, "mehrere taskbezogene Evidenzen" if len(distinct_kinds) > 1 else "taskbezogene Evidenz"))
+        candidates.append(
+            CandidateDecision(
+                skill,
+                decision,
+                confidence,
+                evidence,
+                "mehrere taskbezogene Evidenzen" if len(distinct_kinds) > 1 else "taskbezogene Evidenz",
+                score=score,
+                exact_score=exact_score,
+            )
+        )
 
     def ranking(item: CandidateDecision) -> tuple[float, float, str]:
-        exact_score = sum(
-            evidence.weight
-            for evidence in item.evidence
-            if evidence.kind != "subword"
-        )
-        return (-item.confidence, -exact_score, item.skill.canonical_name)
+        return (-item.confidence, -item.exact_score, item.skill.canonical_name)
 
     candidates.sort(key=ranking)
     required = [item for item in candidates if item.decision == "required" and any(ev.kind == "matrix" for ev in item.evidence)]
