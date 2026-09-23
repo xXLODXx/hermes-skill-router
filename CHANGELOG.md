@@ -3,6 +3,17 @@
 Alle nennenswerten Änderungen am Skill-Router-Plugin. Format orientiert sich an
 Keep a Changelog; Versionierung: SemVer-PoC (0.x).
 
+## 0.8.5 — 2026-09-23
+
+### Fixed
+- **Matrix-Teilwort-Fehlrouting verhindert:** Matrix-Keywords werden jetzt als
+  vollständige Tokens geprüft. Das kurze Flutter-Keyword `ui` matcht damit
+  nicht mehr innerhalb von Wörtern wie `Build`; mehrteilige Keywords verlangen
+  alle ihre Tokens. So werden falsche Pflicht-Injektionen verhindert.
+
+### Added
+- Regressionstest für die zuvor fehlerhafte Anfrage `Build a Python CLI.`.
+
 ## 0.8.4 — 2026-09-22
 
 ### Fixed

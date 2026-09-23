@@ -15,6 +15,13 @@ self-learning engine is retained as a legacy compatibility layer.)
 - productivity/calendar-sync — recommended, 0.52 (tag)
 ```
 
+## What's new in 0.8.5
+
+- **Matrix keywords now require complete tokens** — short keywords such as
+  `ui` no longer match inside unrelated words such as `Build`; multi-word
+  keywords require all of their tokens. This prevents false mandatory skill
+  injections while preserving normal matrix routing.
+
 ## What's new in 0.8.4
 
 - **Ranking confidence no longer saturates** — confidence now uses a bounded,

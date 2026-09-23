@@ -385,6 +385,25 @@ def test_hook_uses_profile_workflow_matrix(monkeypatch, tmp_path: Path) -> None:
     assert source == "workflow-matrix.md"
 
 
+def test_matrix_keywords_require_token_boundaries(monkeypatch, tmp_path: Path) -> None:
+    """A short keyword such as ``ui`` must not match inside ``Build``."""
+    import skill_router
+
+    matrix = tmp_path / "skills" / "software-development" / "workflow-router" / "references" / "workflow-matrix.md"
+    matrix.parent.mkdir(parents=True)
+    matrix.write_text(
+        "## Thema 1: Flutter UI\n\n**Keywords:** `ui`\n\n"
+        "| Kategorie | Skills |\n|---|---|\n"
+        "| **Pflicht** | `flutter-ui-vision-loop` |\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(skill_router.engine, "hermes_home", lambda: tmp_path)
+
+    evidence, _ = skill_router._matrix_evidence("Build a Python CLI.")
+
+    assert evidence == {}
+
+
 def test_catalog_follows_profile_skill_symlinks(tmp_path: Path) -> None:
     target = tmp_path / "default" / "software-development" / "linked-skill"
     target.mkdir(parents=True)
