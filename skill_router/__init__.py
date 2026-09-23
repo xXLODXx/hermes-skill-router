@@ -169,6 +169,7 @@ def register(ctx):
         home = engine.hermes_home()
         skills = scan_catalog(home / "skills")
         loaded = _loaded_names(kwargs) | turn.already_loaded
+        matrix_active = bool((path := _matrix_path()) and path.is_file())
         matrix, matrix_source = _matrix_evidence(user_message or "")
         decision = select(user_message or "", skills, already_loaded=loaded, matrix=matrix)
         rescued = False
@@ -185,7 +186,11 @@ def register(ctx):
         context = render(decision)
         rendered_chars = len(context) if context else 0
 
-        def _record(emitted: bool = False) -> None:
+        def _record(
+            fallback_emitted: bool = False,
+            candidate_context_emitted: bool = False,
+            deduplicated: bool = False,
+        ) -> None:
             record_audit(
                 _audit_path(),
                 session_id,
@@ -195,17 +200,25 @@ def register(ctx):
                 matrix_source=matrix_source,
                 rescue=rescued,
                 rendered_chars=rendered_chars,
-                fallback_emitted=emitted,
+                fallback_emitted=fallback_emitted,
+                stages={
+                    "catalog_available": bool(skills),
+                    "matrix_active": matrix_active,
+                    "matrix_skill_count": len(matrix),
+                    "selector_candidate_count": len(decision.candidates),
+                    "candidate_context_emitted": candidate_context_emitted,
+                    "deduplicated": deduplicated,
+                },
             )
 
         if not names:
             emitted = bool(kwargs.get("is_first_turn")) and not turn.fallback_emitted
             _STORE.update(session_id, already_loaded=loaded, fallback_emitted=turn.fallback_emitted or emitted)
-            _record(emitted=emitted)
+            _record(fallback_emitted=emitted)
             return {"context": FALLBACK} if emitted else None
         if names == turn.last_signature:
             _STORE.update(session_id, already_loaded=loaded)
-            _record()
+            _record(deduplicated=True)
             return None
         _STORE.update(
             session_id,
@@ -213,7 +226,7 @@ def register(ctx):
             injected=set(names),
             already_loaded=loaded,
         )
-        _record()
+        _record(candidate_context_emitted=bool(context))
         return {"context": context} if context else None
 
     def on_tool(tool_name: str, session_id: str, **kwargs):

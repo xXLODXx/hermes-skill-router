@@ -7,6 +7,7 @@ import json
 import threading
 import time
 from collections import Counter
+from collections.abc import Mapping
 from pathlib import Path
 
 from ..version import plugin_version as _plugin_version
@@ -47,6 +48,7 @@ def record(
     rescue: bool = False,
     fallback_emitted: bool = False,
     rendered_chars: int = 0,
+    stages: Mapping[str, bool | int] | None = None,
 ) -> None:
     accepted = list(decision.candidates)
     evidence_kinds = Counter(
@@ -82,6 +84,7 @@ def record(
         "rendered_chars": int(rendered_chars),
         "top_rejected": _top_rejected(decision),
         "fallback_reason": decision.fallback_reason,
+        "stages": dict(stages or {}),
     }
     try:
         path.parent.mkdir(parents=True, exist_ok=True)

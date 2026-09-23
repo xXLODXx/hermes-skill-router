@@ -205,6 +205,24 @@ def test_hook_records_into_session_home_install(monkeypatch, tmp_path: Path) -> 
     assert event["catalog_size"] == 2
 
 
+def test_hook_audit_records_compact_stage_status(monkeypatch, tmp_path: Path) -> None:
+    """Audit stage status identifies where a routing decision was made."""
+    context = _registered(monkeypatch, tmp_path)
+
+    output = context.hooks["pre_llm_call"]("extract PDF OCR", "s-stage-status")
+
+    assert output is not None
+    event = json.loads((tmp_path / "data" / "audit.jsonl").read_text(encoding="utf-8").splitlines()[-1])
+    assert event["stages"] == {
+        "catalog_available": True,
+        "matrix_active": False,
+        "matrix_skill_count": 0,
+        "selector_candidate_count": 1,
+        "candidate_context_emitted": True,
+        "deduplicated": False,
+    }
+
+
 def test_hook_persists_external_loaded_skills(monkeypatch, tmp_path: Path) -> None:
     """A loader-provided skill must remain excluded on the next turn."""
     import skill_router

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hermes-skill-router"
-version = "0.8.5"
+version = "0.8.6"
 description = "Hermes plugin: evidence-based, session-safe skill routing"
 readme = "README.md"
 license = { text = "MIT" }

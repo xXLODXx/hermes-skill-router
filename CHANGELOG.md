@@ -3,6 +3,15 @@
 Alle nennenswerten Änderungen am Skill-Router-Plugin. Format orientiert sich an
 Keep a Changelog; Versionierung: SemVer-PoC (0.x).
 
+## 0.8.6 — 2026-09-23
+
+### Added
+- **Kompakter Stufenstatus im Privacy-Audit:** `stages` dokumentiert ohne
+  Prompttext, ob Katalog und Matrix verfügbar waren, wie viele Matrix- und
+  Selektor-Kandidaten vorlagen sowie ob Kandidatenkontext emittiert oder
+  dedupliziert wurde. Damit lässt sich die erste auffällige Routing-Stufe
+  gezielt eingrenzen.
+
 ## 0.8.5 — 2026-09-23
 
 ### Fixed

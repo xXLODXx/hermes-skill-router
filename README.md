@@ -15,6 +15,13 @@ self-learning engine is retained as a legacy compatibility layer.)
 - productivity/calendar-sync — recommended, 0.52 (tag)
 ```
 
+## What's new in 0.8.6
+
+- **Compact diagnostic stage status** — each privacy-safe audit event now
+  records catalog availability, matrix availability and match count, selector
+  candidate count, emission, and deduplication. This identifies the first
+  routing stage that needs investigation without storing message text.
+
 ## What's new in 0.8.5
 
 - **Matrix keywords now require complete tokens** — short keywords such as
