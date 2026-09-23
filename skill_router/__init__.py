@@ -99,17 +99,22 @@ def _matrix_topics(path: Path) -> list[dict]:
     return topics
 
 
+def _keyword_matches(message_tokens: set[str], keyword: str) -> bool:
+    """Match a matrix keyword as complete token(s), never as a raw substring."""
+    keyword_tokens = tokens(keyword)
+    return bool(keyword_tokens) and keyword_tokens <= message_tokens
+
+
 def _matrix_evidence(message: str) -> tuple[dict[str, tuple[Evidence, ...]], str]:
     """(skill -> matrix evidence, matrix file name) for the matched topics."""
     path = _matrix_path()
     if path is None:
         return {}, ""
-    message_folded = message.casefold()
     message_tokens = tokens(message)
     result: dict[str, list[Evidence]] = {}
     for topic in _matrix_topics(path):
-        keywords = [str(keyword).casefold() for keyword in topic.get("keywords", [])]
-        matched = any(keyword in message_folded or set(tokens(keyword)) & message_tokens for keyword in keywords)
+        keywords = [str(keyword) for keyword in topic.get("keywords", [])]
+        matched = any(_keyword_matches(message_tokens, keyword) for keyword in keywords)
         if not matched:
             continue
         topic_name = str(topic.get("name", "unbenannt"))
