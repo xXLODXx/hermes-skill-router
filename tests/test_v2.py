@@ -122,6 +122,19 @@ def test_confidence_preserves_the_cross_kind_corroboration_bonus() -> None:
     assert decision.candidates[0].confidence > decision.candidates[1].confidence
 
 
+def test_native_plugin_layout_has_no_runtime_python_project() -> None:
+    """Dependency-free directory plugins must not enter Hermes PM workspaces."""
+    root = Path(__file__).resolve().parent.parent
+    assert (root / "plugin.yaml").is_file()
+    assert not (root / "pyproject.toml").exists()
+    assert {"fastapi", "mypy", "pytest", "ruff"} <= set(
+        (root / "requirements-dev.txt").read_text(encoding="utf-8").splitlines()
+    )
+    workflow = (root / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    assert "pip install -r requirements-dev.txt" in workflow
+    assert "PYTHONPATH=. pytest -q" in workflow
+
+
 def test_plugin_version_matches_manifest() -> None:
     from skill_router.version import plugin_version
 

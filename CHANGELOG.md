@@ -3,6 +3,20 @@
 Alle nennenswerten Änderungen am Skill-Router-Plugin. Format orientiert sich an
 Keep a Changelog; Versionierung: SemVer-PoC (0.x).
 
+## 0.8.7 — 2026-09-27
+
+### Fixed
+- **Hermes-Update mit mehreren Profilen:** Der native Directory-Plugin-Install
+  enthält kein `pyproject.toml` mehr, weil der Router keine Runtime-Python-
+  Abhängigkeiten hat. Hermes PM nimmt ihn damit nicht mehr als Workspace-
+  Mitglied in die gemeinsame Dependency-Resolution auf; gleichnamige Kopien
+  aus mehreren Profilen können keinen `Two workspace members are both named
+  hermes-skill-router`-Fehler mehr auslösen.
+
+### Changed
+- Entwicklungswerkzeuge stehen in `requirements-dev.txt`; die CI installiert
+  sie explizit statt das native Plugin als Python-Paket zu bauen.
+
 ## 0.8.6 — 2026-09-23
 
 ### Added

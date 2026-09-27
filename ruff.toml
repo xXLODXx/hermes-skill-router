@@ -1,0 +1,3 @@
+[lint.per-file-ignores]
+"__init__.py" = ["N999"]
+"*/__init__.py" = ["N999"]

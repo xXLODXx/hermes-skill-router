@@ -22,7 +22,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[dev]" pytest
+          pip install -r requirements-dev.txt
 
       - name: Lint (ruff)
         run: ruff check .
@@ -31,7 +31,7 @@ jobs:
         run: mypy -p skill_router
 
       - name: Test (pytest)
-        run: pytest -q
+        run: PYTHONPATH=. pytest -q
 
       - name: Privacy guard
         run: python3 scripts/guard.py
