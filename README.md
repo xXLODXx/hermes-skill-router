@@ -15,6 +15,14 @@ self-learning engine is retained as a legacy compatibility layer.)
 - productivity/calendar-sync — recommended, 0.52 (tag)
 ```
 
+## What's new in 0.8.7
+
+- **Hermes PM-safe directory package** — the native plugin no longer carries a
+  Python project manifest because it has no runtime Python dependencies. Hermes
+  therefore treats it as a dependency-free directory plugin and does not add a
+  duplicate workspace project when the same plugin is installed in multiple
+  profiles during a Hermes update.
+
 ## What's new in 0.8.6
 
 - **Compact diagnostic stage status** — each privacy-safe audit event now
@@ -153,13 +161,6 @@ Typical cost: **~70 tokens per injection ⌀** (compact format, ⌀ ~276 chars),
 
 ```bash
 hermes plugins install xXLODXx/hermes-skill-router
-hermes plugins enable skill-router
-```
-
-### Via pip
-
-```bash
-pip install git+https://github.com/xXLODXx/hermes-skill-router.git
 hermes plugins enable skill-router
 ```
 
