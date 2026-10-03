@@ -3,6 +3,14 @@
 Alle nennenswerten Änderungen am Skill-Router-Plugin. Format orientiert sich an
 Keep a Changelog; Versionierung: SemVer-PoC (0.x).
 
+## 0.8.10 — 2026-10-03
+
+### Changed
+- **Dashboard vereinfacht:** Der Routing-Überblick konzentriert sich auf eine
+  letzte Entscheidung, drei Kernkennzahlen und fünf jüngste Einträge.
+  Technische Diagnosewerte liegen hinter einem aufklappbaren Bereich, damit die
+  Standardansicht ruhig und schnell lesbar bleibt.
+
 ## 0.8.9 — 2026-10-03
 
 ### Fixed

@@ -15,6 +15,12 @@ self-learning engine is retained as a legacy compatibility layer.)
 - productivity/calendar-sync — recommended, 0.52 (tag)
 ```
 
+## What's new in 0.8.10
+
+- **Calmer dashboard** — the default view now prioritizes the latest decision,
+  three essential metrics and a short recent list. Detailed diagnostics are
+  available on demand instead of competing for attention.
+
 ## What's new in 0.8.9
 
 - **Negation-aware routing** — an explicitly excluded skill (`no plan`,
