@@ -9,7 +9,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-_FALLBACK = "0.8.9"
+_FALLBACK = "0.8.10"
 _VERSION = re.compile(r'^version:\s*["\']?([^"\'\s]+)["\']?\s*$', re.MULTILINE)
 
 _cached: str | None = None
