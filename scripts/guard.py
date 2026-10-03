@@ -53,6 +53,7 @@ def main() -> int:
     files = subprocess.run(
         ["git", "diff", "--cached", "--name-only"],
         capture_output=True, text=True, check=True,
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
     ).stdout.splitlines()
 
     all_patterns = PATTERNS + _load_personal_patterns()
