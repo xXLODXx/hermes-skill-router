@@ -1,9 +1,9 @@
 {
   "name": "skill-router",
   "label": "Skill Router",
-  "description": "Skill-Routing-Statistik: Wort→Tool-Kookkurrenz, Lift-Gewichtung, Lexikon-Zustand und Selbstreinigung.",
+  "description": "Privacy-safe routing observatory: matrix gate, priority, dynamic budget and quality signals.",
   "icon": "GitBranch",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "tab": {
     "path": "/skill-router",
     "position": "end"

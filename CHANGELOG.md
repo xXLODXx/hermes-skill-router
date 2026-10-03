@@ -3,6 +3,24 @@
 Alle nennenswerten Änderungen am Skill-Router-Plugin. Format orientiert sich an
 Keep a Changelog; Versionierung: SemVer-PoC (0.x).
 
+## 0.8.9 — 2026-10-03
+
+### Fixed
+- **Explizite Verneinungen respektiert:** Skillnamen hinter kurzen Negationen
+  wie `kein`, `nicht`, `ohne`, `no`, `not` oder `don't` werden als vom Nutzer
+  ausgeschlossen protokolliert und weder priorisiert noch injiziert.
+
+### Added
+- **Routing Observatory:** Das Dashboard zeigt jetzt den datensparsamen
+  Entscheidungsweg der letzten Route (Matrix-Gate, explizite Priorität,
+  Ergebnis), das dynamische Kandidatenbudget und Präzisionssignale.
+- Runtime-Metriken enthalten die Versionen im Audit, Budgetverteilung,
+  explizite Skillnennungen sowie Matrix-Pflichtbudget-Überläufe.
+
+### Changed
+- Dashboard-CSS verwendet Hermes-Theme-Variablen statt fester Dark-Theme-
+  Farben und passt sich damit den aktiven Hermes-Themes an.
+
 ## 0.8.8 — 2026-10-03
 
 ### Fixed

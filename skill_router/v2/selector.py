@@ -106,6 +106,14 @@ def _explicit_name_match(item: CandidateDecision, message: str) -> bool:
     return bool(re.search(pattern, message.casefold()))
 
 
+def _negated_skill_name(skill_name: str, message: str) -> bool:
+    """Detect a short explicit negation immediately before a complete skill ID."""
+    name = re.escape(skill_name.casefold())
+    negation = r"(?:kein(?:e|en|em|er)?|nicht|ohne|no|not|don't|do\s+not)"
+    pattern = rf"(?<![a-z0-9_-]){negation}(?:\s+[a-zäöüß0-9_-]+){{0,2}}\s+{name}(?![a-z0-9_-])"
+    return bool(re.search(pattern, message.casefold()))
+
+
 def select(
     message: str,
     skills: Iterable[SkillRecord],
@@ -127,6 +135,16 @@ def select(
         if canonical in seen:
             continue
         seen.add(canonical)
+        if _negated_skill_name(skill.name, message):
+            rejected.append(
+                CandidateDecision(
+                    skill,
+                    "reject",
+                    0.0,
+                    reason="vom Nutzer ausgeschlossen",
+                )
+            )
+            continue
         evidence = _bounded_subwords(
             tuple(_scaled(item, dfs) for item in evidence_for(message, skill))
             + _learned_evidence(message, canonical, learned)
