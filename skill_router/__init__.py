@@ -44,6 +44,13 @@ def _audit_path() -> Path:
 _MATRIX_CACHE: dict[tuple[str, int, int], list[dict]] = {}
 _MAX_MATRIX_CACHE = 8
 
+# Broad action words occur across unrelated tasks. They are useful only as
+# corroboration; a topic must also have a specific keyword or two broad hits.
+_GENERIC_MATRIX_KEYWORDS = frozenset({
+    "analyse", "analysis", "create", "list", "review", "task", "workflow",
+    "show", "complete", "plan", "bericht", "report", "ui", "screen", "m3",
+})
+
 # Context-rescue bounds: last tool results / assistant reply of the SAME
 # session, in-memory only, never persisted or transmitted.
 _RESCUE_RESULTS = 2
@@ -105,6 +112,19 @@ def _keyword_matches(message_tokens: set[str], keyword: str) -> bool:
     return bool(keyword_tokens) and keyword_tokens <= message_tokens
 
 
+def _matrix_topic_matches(message_tokens: set[str], keywords: list[str]) -> bool:
+    """Require one specific matrix signal or corroborating broad signals."""
+    matched = [keyword for keyword in keywords if _keyword_matches(message_tokens, keyword)]
+    if not matched:
+        return False
+    specific = [
+        keyword
+        for keyword in matched
+        if len(tokens(keyword)) > 1 or not tokens(keyword) <= _GENERIC_MATRIX_KEYWORDS
+    ]
+    return bool(specific) or len(set(matched)) >= 2
+
+
 def _matrix_evidence(message: str) -> tuple[dict[str, tuple[Evidence, ...]], str]:
     """(skill -> matrix evidence, matrix file name) for the matched topics."""
     path = _matrix_path()
@@ -114,7 +134,7 @@ def _matrix_evidence(message: str) -> tuple[dict[str, tuple[Evidence, ...]], str
     result: dict[str, list[Evidence]] = {}
     for topic in _matrix_topics(path):
         keywords = [str(keyword) for keyword in topic.get("keywords", [])]
-        matched = any(_keyword_matches(message_tokens, keyword) for keyword in keywords)
+        matched = _matrix_topic_matches(message_tokens, keywords)
         if not matched:
             continue
         topic_name = str(topic.get("name", "unbenannt"))
@@ -200,6 +220,8 @@ def register(ctx):
                 matrix_source=matrix_source,
                 rescue=rescued,
                 rendered_chars=rendered_chars,
+                candidate_budget=decision.candidate_budget,
+                explicit_skill_count=decision.explicit_skill_count,
                 fallback_emitted=fallback_emitted,
                 stages={
                     "catalog_available": bool(skills),

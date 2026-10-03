@@ -5,7 +5,12 @@ from pathlib import Path
 
 from skill_router.v2.audit import record
 from skill_router.v2.catalog import scan_catalog
-from skill_router.v2.models import Evidence, RoutingDecision, SkillRecord
+from skill_router.v2.models import (
+    CandidateDecision,
+    Evidence,
+    RoutingDecision,
+    SkillRecord,
+)
 from skill_router.v2.render import FALLBACK, render
 from skill_router.v2.selector import select
 from skill_router.v2.session import SessionStore
@@ -476,3 +481,82 @@ def test_catalog_walk_cache_respects_ttl(monkeypatch, tmp_path: Path) -> None:
     assert len(catalog_mod.scan_catalog(skills)) == 2
     monkeypatch.setenv("SKILL_ROUTER_SCAN_TTL", "0")
     assert len(catalog_mod.scan_catalog(skills)) == 3
+
+
+def test_matrix_requires_specific_signal_or_two_generic_signals(monkeypatch, tmp_path: Path) -> None:
+    """A broad word such as review must not activate Flutter by itself."""
+    import skill_router
+
+    matrix = tmp_path / "skills" / "software-development" / "workflow-router" / "references" / "workflow-matrix.md"
+    matrix.parent.mkdir(parents=True)
+    matrix.write_text(
+        "## Thema 1: Flutter UI\n\n**Keywords:** `flutter`, `ui`, `review`\n\n"
+        "| Kategorie | Skills |\n|---|---|\n"
+        "| **Pflicht** | `flutter-ui-vision-loop` |\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(skill_router.engine, "hermes_home", lambda: tmp_path)
+
+    broad_only, _ = skill_router._matrix_evidence("Bitte mache einen review des Pull Requests")
+    specific, _ = skill_router._matrix_evidence("Bitte reviewe das Flutter UI")
+
+    assert broad_only == {}
+    assert "flutter-ui-vision-loop" in specific
+
+
+def test_explicit_skill_mentions_expand_the_dynamic_budget() -> None:
+    """Four named skills must not lose one merely because discovery defaults to three."""
+    skills = [
+        SkillRecord("routing-plugin-verification", "software-development"),
+        SkillRecord("github", "software-development"),
+        SkillRecord("plan", "software-development"),
+        SkillRecord("hermes-plugin-release-rollout", "software-development"),
+    ]
+
+    decision = select(
+        "Nutze routing-plugin-verification, github, plan und hermes-plugin-release-rollout.",
+        skills,
+    )
+
+    assert {candidate.skill.name for candidate in decision.candidates} == {
+        "routing-plugin-verification",
+        "hermes-plugin-release-rollout",
+        "github",
+        "plan",
+    }
+
+
+def test_audit_records_priority_and_dynamic_budget(tmp_path: Path) -> None:
+    """New tuning metrics remain aggregate-only and contain no session identifier."""
+    path = tmp_path / "data" / "v2.jsonl"
+    skill = SkillRecord("plan", "software-development")
+    decision = RoutingDecision(
+        candidates=(
+            CandidateDecision(
+                skill, "required", 0.9, (Evidence("name", "plan", 5.0, "Skillname enthält 'plan'"),)
+            ),
+        )
+    )
+
+    record(path, "private-session", decision, candidate_budget=4, explicit_skill_count=1)
+
+    event = json.loads(path.read_text(encoding="utf-8"))
+    assert event["candidate_budget"] == 4
+    assert event["explicit_skill_count"] == 1
+    assert "private-session" not in path.read_text(encoding="utf-8")
+
+
+def test_subword_evidence_is_bounded_per_catalog_field() -> None:
+    """Several morphological matches cannot multiply a candidate's support score."""
+    skill = SkillRecord(
+        "audio-processing",
+        "media",
+        description="Convert converted conversion audio files",
+        tags=("convert",),
+    )
+
+    decision = select("converting conversion audio", [skill])
+
+    candidate = decision.candidates[0]
+    subwords = [item for item in candidate.evidence if item.kind == "subword"]
+    assert len(subwords) <= 2

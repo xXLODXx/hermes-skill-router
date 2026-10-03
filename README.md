@@ -15,6 +15,21 @@ self-learning engine is retained as a legacy compatibility layer.)
 - productivity/calendar-sync — recommended, 0.52 (tag)
 ```
 
+## What's new in 0.8.8
+
+- **Specific matrix activation** — broad action words such as `review`, `task`
+  and `list` now need corroboration. A topic activates only with a specific
+  keyword or two different broad signals, preventing unrelated workflow packs.
+- **Intent-aware dynamic budget** — the normal limit remains three candidates;
+  it grows only for exact user-named skills or qualified matrix requirements,
+  up to six. Excess matrix requirements are reported in the privacy-safe audit
+  instead of silently disappearing.
+- **Stable discovery ranking** — an exact hyphenated skill name is recognized
+  directly, and subword evidence is capped to the strongest contribution per
+  catalog field so repeated stems cannot inflate a ranking.
+- **Actionable metrics** — audit and analyzer output now include the applied
+  candidate budget, direct skill mentions and matrix-required budget rejections.
+
 ## What's new in 0.8.7
 
 - **Hermes PM-safe directory package** — the native plugin no longer carries a
@@ -138,7 +153,11 @@ Version 0.800 uses a precision-first selector for the live routing path:
 
 - Exact name, tag, description, matrix and validated learned signals outrank generic matches.
 - Language-neutral subword/stem and compound evidence is supporting evidence only; it cannot trigger an injection by itself.
-- At most three automatically discovered candidates are injected per event. Matrix-declared **Required/Pflicht** skills are exempt from that discovery budget, so mandatory workflow skills cannot be silently dropped; optional and inferred candidates remain capped and are recorded as rejections.
+- At most three automatically discovered candidates are injected per event. The
+  budget grows only for exact user-named skills or qualified matrix-declared
+  **Required/Pflicht** skills, up to six total candidates. Any excess mandatory
+  skills receive an explicit privacy-safe audit reason rather than silently
+  disappearing; optional and inferred candidates remain capped.
 - If no candidate reaches the confidence gate, the first turn of a session gets a single short fallback hint; later empty turns stay silent — unrelated skills are never loaded.
 - Context rescue (see above) rescues empty follow-up turns from the session's own bounded context; opt out with `SKILL_ROUTER_CONTEXT_RESCUE=0`.
 - The active home resolves through the host's context-local `get_hermes_home()` (multiplex-safe), so every profile routes with its own catalog; standalone fallback order: `HERMES_HOME` env → plugin layout → `~/.hermes`.

@@ -16,6 +16,7 @@ from .models import (
 )
 
 MAX_CANDIDATES = 3
+MAX_DYNAMIC_CANDIDATES = 6
 
 # Specificity: a matched catalog word carried by <= SPECIFICITY_CAP skills keeps
 # its full weight; more frequent words scale down (min(1, cap/df)) so a generic
@@ -57,6 +58,21 @@ def _scaled(item: Evidence, dfs: Mapping[str, Mapping[str, int]]) -> Evidence:
     return replace(item, weight=item.weight * specificity)
 
 
+def _bounded_subwords(evidence: Iterable[Evidence]) -> tuple[Evidence, ...]:
+    """Retain at most one supporting subword match for each catalog field."""
+    retained: list[Evidence] = []
+    strongest: dict[str, Evidence] = {}
+    for item in evidence:
+        if item.kind != "subword":
+            retained.append(item)
+            continue
+        field, _ = _matched_field(item)
+        current = strongest.get(field)
+        if current is None or (item.weight, item.value) > (current.weight, current.value):
+            strongest[field] = item
+    return tuple(retained + [strongest[field] for field in sorted(strongest)])
+
+
 def _has_specific_signal(evidence: Iterable[Evidence], dfs: Mapping[str, Mapping[str, int]]) -> bool:
     for item in evidence:
         if item.kind in {"name", "learned", "matrix"}:
@@ -84,6 +100,12 @@ def _learned_evidence(message: str, skill_name: str, learned: Mapping[str, Mappi
     return tuple(result)
 
 
+def _explicit_name_match(item: CandidateDecision, message: str) -> bool:
+    """Whether the task quotes the complete skill name, not merely one word."""
+    pattern = rf"(?<![a-z0-9_-]){re.escape(item.skill.canonical_name)}(?![a-z0-9_-])"
+    return bool(re.search(pattern, message.casefold()))
+
+
 def select(
     message: str,
     skills: Iterable[SkillRecord],
@@ -105,7 +127,7 @@ def select(
         if canonical in seen:
             continue
         seen.add(canonical)
-        evidence = (
+        evidence = _bounded_subwords(
             tuple(_scaled(item, dfs) for item in evidence_for(message, skill))
             + _learned_evidence(message, canonical, learned)
             + matrix.get(canonical, ())
@@ -167,13 +189,42 @@ def select(
         return (-item.confidence, -item.exact_score, item.skill.canonical_name)
 
     candidates.sort(key=ranking)
-    required = [item for item in candidates if item.decision == "required" and any(ev.kind == "matrix" for ev in item.evidence)]
-    discovered = [item for item in candidates if item not in required]
-    candidates = required + discovered[: max(0, MAX_CANDIDATES - len(required))]
-    overflow = [item for item in discovered if item not in candidates]
+    explicit = [item for item in candidates if _explicit_name_match(item, message)]
+    matrix_required = [
+        item for item in candidates
+        if item not in explicit and item.decision == "required" and any(ev.kind == "matrix" for ev in item.evidence)
+    ]
+    # The budget grows only for direct user intent or validated workflow
+    # requirements. Discovery remains capped at three; a pathological request
+    # cannot inject an unbounded list.
+    all_priority = explicit + matrix_required
+    dynamic_budget = min(MAX_DYNAMIC_CANDIDATES, max(MAX_CANDIDATES, len(all_priority)))
+    priority = all_priority[:dynamic_budget]
+    priority_overflow = all_priority[dynamic_budget:]
+    discovered = [item for item in candidates if item not in priority]
+    candidates = priority + discovered[: max(0, dynamic_budget - len(priority))]
+    overflow = [item for item in discovered if item not in candidates and item not in priority_overflow]
     rejected.extend(
         replace(item, decision="reject", reason="Kandidatenbudget überschritten")
         for item in overflow
     )
+    rejected.extend(
+        replace(
+            item,
+            decision="reject",
+            reason=(
+                "Matrix-Pflichtbudget überschritten"
+                if any(ev.kind == "matrix" for ev in item.evidence)
+                else "Explizites Kandidatenbudget überschritten"
+            ),
+        )
+        for item in priority_overflow
+    )
     fallback = None if candidates else "no_high_confidence_match"
-    return RoutingDecision(tuple(candidates), tuple(rejected), fallback)
+    return RoutingDecision(
+        tuple(candidates),
+        tuple(rejected),
+        fallback,
+        candidate_budget=dynamic_budget,
+        explicit_skill_count=len(explicit),
+    )

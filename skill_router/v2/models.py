@@ -48,6 +48,8 @@ class RoutingDecision:
     rejected: tuple[CandidateDecision, ...] = ()
     fallback_reason: str | None = None
     estimated_chars: int = 0
+    candidate_budget: int = 3
+    explicit_skill_count: int = 0
 
     @property
     def accepted(self) -> tuple[CandidateDecision, ...]:

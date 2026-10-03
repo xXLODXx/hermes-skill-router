@@ -41,7 +41,11 @@ def _tokenize(text: str) -> frozenset[str]:
 
 def tokens(text: str) -> set[str]:
     """Fresh mutable token set (the cache itself never leaks a shared object)."""
-    return set(_tokenize(text))
+    # Skill names use hyphens while user messages commonly quote those names
+    # verbatim. Treat a hyphen as a token boundary on both sides so an explicit
+    # ``routing-plugin-verification`` request has the same evidence as the
+    # catalog's normalized ``routing plugin verification`` name.
+    return set(_tokenize(text.replace("-", " ")))
 
 
 def _field_tokens(values: Iterable[str]) -> set[str]:
