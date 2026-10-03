@@ -3,6 +3,16 @@
 Alle nennenswerten Änderungen am Skill-Router-Plugin. Format orientiert sich an
 Keep a Changelog; Versionierung: SemVer-PoC (0.x).
 
+## 0.8.11 — 2026-10-03
+
+### Changed
+- **Modernes Observatory-Design:** Das Dashboard ist jetzt eine englische
+  Produktansicht mit Gradient-Hero (letzte Route + Konfidenz-Ring +
+  Budgetanzeige), einer dreistufigen Routing-Pipeline (Intent → Evidenz →
+  Kontext), einem Vier-Karten-Leistungsgrid und einem Live-Entscheidungsfeed
+  mit Konfidenz je Event. Erweiterte Diagnose bleibt hinter einer einzigen
+  Aufklappsektion. Alle Farben folgen weiterhin den Hermes-Theme-Variablen.
+
 ## 0.8.10 — 2026-10-03
 
 ### Changed
