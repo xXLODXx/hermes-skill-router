@@ -49,6 +49,8 @@ def record(
     fallback_emitted: bool = False,
     rendered_chars: int = 0,
     stages: Mapping[str, bool | int] | None = None,
+    candidate_budget: int | None = None,
+    explicit_skill_count: int | None = None,
 ) -> None:
     accepted = list(decision.candidates)
     evidence_kinds = Counter(
@@ -59,6 +61,9 @@ def record(
     confidence = [item.confidence for item in accepted]
     scores = [item.score for item in accepted]
     budget_rejections = sum(item.reason == "Kandidatenbudget überschritten" for item in decision.rejected)
+    matrix_required_budget_rejections = sum(
+        item.reason == "Matrix-Pflichtbudget überschritten" for item in decision.rejected
+    )
     event = {
         "ts": time.time(),
         "session": _session_hash(session_id) if session_id else None,
@@ -72,6 +77,7 @@ def record(
         "accepted_count": len(accepted),
         "rejected_count": len(decision.rejected),
         "budget_rejections": budget_rejections,
+        "matrix_required_budget_rejections": matrix_required_budget_rejections,
         "evidence": [{item.skill.name: sorted({ev.kind for ev in item.evidence})} for item in accepted],
         "evidence_kind_counts": dict(sorted(evidence_kinds.items())),
         "confidence_max": max(confidence, default=0.0),
@@ -82,6 +88,8 @@ def record(
         "score_avg": sum(scores) / len(scores) if scores else 0.0,
         "estimated_chars": sum(len(item.skill.name) + 48 for item in accepted),
         "rendered_chars": int(rendered_chars),
+        "candidate_budget": int(candidate_budget if candidate_budget is not None else decision.candidate_budget),
+        "explicit_skill_count": int(explicit_skill_count if explicit_skill_count is not None else decision.explicit_skill_count),
         "top_rejected": _top_rejected(decision),
         "fallback_reason": decision.fallback_reason,
         "stages": dict(stages or {}),

@@ -3,6 +3,33 @@
 Alle nennenswerten Änderungen am Skill-Router-Plugin. Format orientiert sich an
 Keep a Changelog; Versionierung: SemVer-PoC (0.x).
 
+## 0.8.8 — 2026-10-03
+
+### Fixed
+- **Breite Matrix-Trigger entschärft:** Allgemeine Tätigkeitswörter wie
+  `review`, `task`, `list` oder `workflow` aktivieren ein Thema nicht mehr
+  allein. Ein Thema braucht jetzt mindestens ein spezifisches Keyword oder zwei
+  verschiedene breite Signale.
+- **Explizite Skillnamen geschützt:** Eine vollständig im Auftrag genannte
+  Skill-ID (auch mit Bindestrichen) erhält Vorrang vor Discovery-Treffern und
+  kann nicht mehr still vom Standardbudget verdrängt werden.
+- **Subword-Score begrenzt:** Pro Katalogfeld zählt höchstens das stärkste
+  Stamm-/Teilwortsignal; viele ähnliche Teilwörter können Rangfolgen nicht mehr
+  künstlich aufblasen.
+
+### Changed
+- **Dynamisches Kandidatenbudget:** Standard bleibt bei drei Kandidaten. Es
+  wächst nur für explizit genannte Skills oder qualifizierte Matrix-Pflichtskills
+  bis maximal sechs. Darüber liegende Pflichtskills werden als eigener,
+  datensparsamer Auditgrund sichtbar statt still verloren zu gehen.
+
+### Added
+- Privacy-sicheres Audit für dynamisches Budget, explizite Skillnennungen und
+  Matrix-Pflichtbudget-Verwerfungen; der JSONL-Analyzer fasst diese Werte auch
+  für ältere Events robust zusammen.
+- Regressionstests für breite Matrix-Trigger, Bindestrich-Skillnamen, dynamische
+  Budgeterweiterung und die neuen Auditfelder.
+
 ## 0.8.7 — 2026-09-27
 
 ### Fixed

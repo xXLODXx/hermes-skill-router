@@ -51,6 +51,11 @@ def analyze(path: Path) -> dict[str, object]:
         "accepted_candidates": sum(int(event.get("accepted_count", len(event.get("accepted", [])))) for event in events),
         "rejected_candidates": sum(int(event.get("rejected_count", 0)) for event in events),
         "budget_rejections": sum(int(event.get("budget_rejections", 0)) for event in events),
+        "matrix_required_budget_rejections": sum(
+            int(event.get("matrix_required_budget_rejections", 0)) for event in events
+        ),
+        "candidate_budgets": dict(Counter(int(event.get("candidate_budget", 3)) for event in events)),
+        "explicit_skill_mentions": sum(int(event.get("explicit_skill_count", 0)) for event in events),
         "avg_candidates_per_event": sum(int(event.get("accepted_count", len(event.get("accepted", [])))) for event in events) / len(events) if events else 0.0,
         "avg_estimated_chars": sum(int(event.get("estimated_chars", 0)) for event in events) / len(events) if events else 0.0,
         "avg_rendered_chars": sum(rendered) / len(rendered) if rendered else 0.0,
