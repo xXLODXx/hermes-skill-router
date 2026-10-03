@@ -15,6 +15,20 @@ self-learning engine is retained as a legacy compatibility layer.)
 - productivity/calendar-sync — recommended, 0.52 (tag)
 ```
 
+## What's new in 0.8.12
+
+- **The tile layout is now actually visible** — the stylesheet previously
+  referenced `--ui-*` variables that only exist in the desktop app, so in the
+  web dashboard (port 9119) every border, background fill and accent silently
+  collapsed to `unset`. All colors now come from the dashboard's real tokens
+  (`--color-card/-border/-ring/-success/-warning`, `--midground(-base)`,
+  `--radius`, …). Every section is a framed tile with a background fill, and
+  pipeline steps and metrics are nested sub-tiles inside it.
+- **Cleaner geometry and copy** — no oversized decorative circle or double
+  inner frame at the hero; a clearly tracked empty budget segment; roomier
+  chips; corrected singular ("1 skill selected"); the event version badge is
+  prefixed with `v` to distinguish it from the runtime version.
+
 ## What's new in 0.8.11
 
 - **Modern observatory design** — the dashboard now reads as a product
