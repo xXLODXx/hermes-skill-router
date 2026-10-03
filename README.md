@@ -17,9 +17,13 @@ self-learning engine is retained as a legacy compatibility layer.)
 
 ## What's new in 0.8.11
 
-- **Calmer dashboard** — the default view now prioritizes the latest decision,
-  three essential metrics and a short recent list. Detailed diagnostics are
-  available on demand instead of competing for attention.
+- **Modern observatory design** — the dashboard now reads as a product
+  surface, not a debug dump: a gradient hero panel with the latest route,
+  a conic confidence ring, an explicit three-stage routing pipeline
+  (intent signal → evidence review → context ready), a four-card
+  performance grid and a live decision feed with per-event confidence.
+  All copy is English, all colors follow the active Hermes theme, and
+  advanced diagnostics stay behind one disclosure.
 
 ## What's new in 0.8.9
 

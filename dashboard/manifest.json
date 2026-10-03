@@ -3,7 +3,7 @@
   "label": "Skill Router",
   "description": "Privacy-safe routing observatory: matrix gate, priority, dynamic budget and quality signals.",
   "icon": "GitBranch",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "tab": {
     "path": "/skill-router",
     "position": "end"
