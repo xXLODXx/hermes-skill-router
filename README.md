@@ -15,7 +15,7 @@ self-learning engine is retained as a legacy compatibility layer.)
 - productivity/calendar-sync — recommended, 0.52 (tag)
 ```
 
-## What's new in 0.8.10
+## What's new in 0.8.11
 
 - **Calmer dashboard** — the default view now prioritizes the latest decision,
   three essential metrics and a short recent list. Detailed diagnostics are
