@@ -3,6 +3,29 @@
 Alle nennenswerten Änderungen am Skill-Router-Plugin. Format orientiert sich an
 Keep a Changelog; Versionierung: SemVer-PoC (0.x).
 
+## 0.8.12 — 2026-10-03
+
+### Fixed
+- **Kachel-Layout im Dashboard tatsächlich sichtbar:** Das Stylesheet baute
+  auf `--ui-*`-Variablen, die nur die Desktop-App definiert — im Web-Dashboard
+  (Port 9119) lösten sie zu `unset` auf, sodass Rahmen, Hintergrundflächen und
+  Akzente unsichtbar blieben. Alle Farben kommen jetzt aus den real definierten
+  Dashboard-Tokens (`--color-card/-border/-ring/-success/-warning`,
+  `--midground(-base)`, `--color-muted-foreground`, `--radius`, `--font-mono`).
+- **Keine Geometrie-Artefakte mehr:** Der dekorative Riesenkreis hinter dem
+  Konfidenz-Ring und der doppelte Innenrahmen am Hero entfallen; der Ring ist
+  ein sauberer Einzelring.
+
+### Changed
+- **Kachel-Layout:** Jeder Abschnitt (Letzte Route, Pipeline, Performance,
+  Aktivitätsfeed, Diagnose) ist eine gerahmte Kachel mit Hintergrundfüllung;
+  Pipeline-Schritte und Kennzahlen liegen als verschachtelte Sub-Kacheln darin.
+  Luftige Chips (kein Zeilenbruch mehr), sichtbarer Track für das leere
+  Budget-Segment, größere Flow-Pfeile, Singular/Plural-Korrektur („1 skill“).
+- Das Versions-Badge der letzten Route trägt jetzt ein „v"-Präfix
+  (Abgrenzung zur Laufzeitversion im Header); Fallback-Zeilen im Feed zeigen
+  „—" statt irreführender 0 %, der Ring-Track ist kräftiger.
+
 ## 0.8.11 — 2026-10-03
 
 ### Changed

@@ -37,7 +37,7 @@
     const selected = Boolean(event && event.accepted_count);
     const score = percent(event && event.confidence);
     return h("section", { className: "sr3-hero" }, h("div", { className: "sr3-hero-copy" },
-      h("div", { className: "sr3-kicker" }, h("span", null, t.route), event ? h(Badge, { className: "sr3-version" }, event.plugin_version || props.version) : null),
+      h("div", { className: "sr3-kicker" }, h("span", null, t.route), event ? h(Badge, { className: "sr3-version", title: "Recorded by plugin v" + (event.plugin_version || props.version) }, "v" + (event.plugin_version || props.version)) : null),
       h("h2", null, event ? (selected ? t.selected : t.fallback) : "Waiting for the first route"),
       h("p", null, event ? (selected ? "The router found focused, high-confidence context for this request." : "No skill crossed the relevance threshold. The regular skill index remains available.") : t.noActivity),
       h(Chips, { skills: event && event.accepted, empty: event && event.fallback }),
@@ -54,7 +54,7 @@
   }
   function Activity(props) {
     const e = props.event, selected = Boolean(e.accepted_count);
-    return h("div", { className: "sr3-activity-row" }, h("time", null, time(e.ts)), h("i", { className: "sr3-event-dot sr3-event-dot--" + (selected ? "selected" : "fallback") }), h("div", { className: "sr3-activity-body" }, h("strong", null, selected ? e.accepted_count + " skills selected" : t.fallback), h(Chips, { skills: e.accepted })), h("div", { className: "sr3-event-score" }, h("strong", null, percent(e.confidence) + "%"), h("span", null, "confidence")));
+    return h("div", { className: "sr3-activity-row" }, h("time", null, time(e.ts)), h("i", { className: "sr3-event-dot sr3-event-dot--" + (selected ? "selected" : "fallback") }), h("div", { className: "sr3-activity-body" }, h("strong", null, selected ? e.accepted_count + (e.accepted_count === 1 ? " skill" : " skills") + " selected" : t.fallback), h(Chips, { skills: e.accepted })), h("div", { className: "sr3-event-score" }, h("strong", null, selected ? percent(e.confidence) + "%" : "—"), h("span", null, selected ? "confidence" : "no injection")));
   }
   function Diagnostics(props) {
     const [open, setOpen] = useState(false), m = props.metrics;
