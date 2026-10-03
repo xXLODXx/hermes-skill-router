@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import logging
 import sys
+from collections import Counter
 from pathlib import Path
 
 from fastapi import APIRouter
@@ -117,6 +118,8 @@ def runtime_metrics() -> dict:
     injections = sum(bool(e.get("accepted")) for e in events)
     fallbacks = sum(bool(e.get("fallback_reason")) for e in events)
     budget = sum(int(e.get("budget_rejections", 0)) for e in events)
+    matrix_budget = sum(int(e.get("matrix_required_budget_rejections", 0)) for e in events)
+    explicit_mentions = sum(int(e.get("explicit_skill_count", 0)) for e in events)
     rescued = sum(bool(e.get("rescue")) for e in events)
     profiles: dict[str, int] = {}
     for event in events:
@@ -136,12 +139,17 @@ def runtime_metrics() -> dict:
             "accepted_count": int(event.get("accepted_count", len(event.get("accepted", [])))),
             "rejected_count": int(event.get("rejected_count", 0)),
             "budget_rejections": int(event.get("budget_rejections", 0)),
+            "matrix_required_budget_rejections": int(event.get("matrix_required_budget_rejections", 0)),
+            "candidate_budget": int(event.get("candidate_budget", 3)),
+            "explicit_skill_count": int(event.get("explicit_skill_count", 0)),
+            "plugin_version": str(event.get("plugin_version") or "unknown"),
             "estimated_chars": int(event.get("estimated_chars", 0)),
             "confidence": round(float(event.get("confidence_avg", 0.0)), 2),
             "fallback": event.get("fallback_reason"),
             "profile": event.get("profile"),
             "catalog_size": int(event.get("catalog_size", 0)),
             "rescue": bool(event.get("rescue")),
+            "stages": dict(event.get("stages") or {}),
         })
     result = {
         "version": _plugin_version(),
@@ -152,12 +160,17 @@ def runtime_metrics() -> dict:
         "accepted_candidates": accepted,
         "rejected_candidates": rejected,
         "budget_rejections": budget,
+        "matrix_required_budget_rejections": matrix_budget,
+        "explicit_skill_mentions": explicit_mentions,
+        "candidate_budgets": dict(sorted(Counter(int(e.get("candidate_budget", 3)) for e in events).items())),
+        "version_distribution": dict(sorted(Counter(str(e.get("plugin_version") or "unknown") for e in events).items())),
         "rescued_events": rescued,
         "profiles": dict(sorted(profiles.items())),
         "avg_candidates": round(accepted / len(events), 2) if events else 0.0,
         "avg_chars": round(sum(chars) / len(chars), 1) if chars else 0.0,
         "avg_confidence": round(sum(confidence) / len(confidence), 3) if confidence else 0.0,
         "evidence": dict(sorted(evidence.items())),
+        "latest": recent[0] if recent else None,
         "recent": recent,
     }
     _cache_metrics = result

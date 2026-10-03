@@ -15,6 +15,14 @@ self-learning engine is retained as a legacy compatibility layer.)
 - productivity/calendar-sync — recommended, 0.52 (tag)
 ```
 
+## What's new in 0.8.9
+
+- **Negation-aware routing** — an explicitly excluded skill (`no plan`,
+  `keinen Plan`, `ohne plan`) is rejected rather than elevated by its name.
+- **Routing Observatory dashboard** — a theme-aware view now makes the latest
+  privacy-safe decision path visible: matrix gate, direct intent, dynamic
+  budget, outcome, version history and quality signals.
+
 ## What's new in 0.8.8
 
 - **Specific matrix activation** — broad action words such as `review`, `task`
@@ -170,7 +178,7 @@ The plugin writes privacy-safe JSONL diagnostics to `data/v2_injections.jsonl`. 
 python scripts/analyze_v2_metrics.py data/v2_injections.jsonl
 ```
 
-The dashboard's **Mission Control** view separates live routing health from the historical learning store. It shows the runtime version, routing funnel, accepted/rejected candidates, fallbacks, confidence, evidence profile, the per-event **profile** and **catalog size** (a quick way to spot cross-profile binding problems) and recent anonymized decisions. Note: the dashboard reads the data directory of the copy it was loaded from (its launch home), which can differ from the profile whose sessions you are inspecting. A zero-event state means “no runtime data yet”, not “plugin failed”.
+The dashboard's **Routing Observatory** separates live routing health from the historical learning store. It shows the privacy-safe decision path (matrix gate → direct intent → budget → outcome), runtime-version distribution, routing funnel, accepted/rejected candidates, fallbacks, confidence, evidence profile and recent anonymized decisions. Note: the dashboard reads the data directory of the copy it was loaded from (its launch home), which can differ from the profile whose sessions you are inspecting. A zero-event state means “no runtime data yet”, not “plugin failed”.
 
 Typical cost: **~70 tokens per injection ⌀** (compact format, ⌀ ~276 chars), 0 tokens for follow-ups on the same topic, and at most one short fallback hint or one rescued injection per session boundary case.
 

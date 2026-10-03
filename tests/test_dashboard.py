@@ -80,6 +80,44 @@ def dashboard_env(tmp_path: Path, monkeypatch) -> dict:
         }),
         encoding="utf-8",
     )
+    (data_dir / "v2_injections.jsonl").write_text(
+        "\n".join(
+            [
+                json.dumps({
+                    "plugin_version": "0.8.8",
+                    "profile": "app",
+                    "accepted": ["plan"],
+                    "accepted_count": 1,
+                    "rejected_count": 2,
+                    "budget_rejections": 1,
+                    "matrix_required_budget_rejections": 0,
+                    "candidate_budget": 4,
+                    "explicit_skill_count": 1,
+                    "confidence_avg": 0.8,
+                    "estimated_chars": 54,
+                    "evidence_kind_counts": {"name": 1},
+                    "ts": 1.0,
+                    "stages": {"matrix_active": True, "matrix_skill_count": 1},
+                }),
+                json.dumps({
+                    "plugin_version": "0.8.7",
+                    "profile": "app",
+                    "accepted": [],
+                    "accepted_count": 0,
+                    "rejected_count": 1,
+                    "budget_rejections": 0,
+                    "candidate_budget": 3,
+                    "explicit_skill_count": 0,
+                    "confidence_avg": 0.0,
+                    "estimated_chars": 0,
+                    "evidence_kind_counts": {},
+                    "fallback_reason": "no_high_confidence_match",
+                    "ts": 2.0,
+                }),
+            ]
+        ) + "\n",
+        encoding="utf-8",
+    )
     # Mini-Skills-Verzeichnis für die dynamische Ergänzung (Option live):
     # zwei zusätzliche Skills ohne Lern-Daten + einer, der dem Fixture-
     # Tool entspricht (flutter-dev) — testet, dass alle erscheinen.
@@ -99,6 +137,7 @@ def dashboard_env(tmp_path: Path, monkeypatch) -> dict:
 
     api._LEXICON_PATH = data_dir / "learned_keywords.json"
     api._STATS_PATH = data_dir / "tool_stats.json"
+    api._AUDIT_PATH = data_dir / "v2_injections.jsonl"
     # _PLUGIN_DIR ebenfalls isolieren — sonst schreiben die last_injection-
     # Tests in den ECHTEN Plugin-Clone (data/last_injection.json des Hooks
     # wird überschrieben/gelöscht; gefunden 2026-08-13).
@@ -106,6 +145,7 @@ def dashboard_env(tmp_path: Path, monkeypatch) -> dict:
     api._cache_mtime = None
     api._cache_overview = None
     api._cache_decision = None
+    api._cache_metrics = None
     return api
 
 
@@ -209,3 +249,15 @@ def test_last_injection_mit_datei(dashboard_env, tmp_path) -> None:
         assert result["skills"] == ["kanban-dev-orchestration"]
     finally:
         inj.unlink(missing_ok=True)
+
+
+def test_runtime_metrics_exposes_routing_observatory_data(dashboard_env) -> None:
+    api = dashboard_env
+
+    result = api.runtime_metrics()
+
+    assert result["version_distribution"] == {"0.8.7": 1, "0.8.8": 1}
+    assert result["candidate_budgets"] == {3: 1, 4: 1}
+    assert result["explicit_skill_mentions"] == 1
+    assert result["latest"]["candidate_budget"] == 3
+    assert result["recent"][0]["candidate_budget"] == 3

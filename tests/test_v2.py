@@ -560,3 +560,14 @@ def test_subword_evidence_is_bounded_per_catalog_field() -> None:
     candidate = decision.candidates[0]
     subwords = [item for item in candidate.evidence if item.kind == "subword"]
     assert len(subwords) <= 2
+
+
+def test_negated_skill_name_is_not_explicit_or_selected() -> None:
+    """A user who says not to create a plan must not receive the plan skill."""
+    decision = select(
+        "Bitte erstelle keinen Plan und nutze nicht plan.",
+        [SkillRecord("plan", "software-development", tags=("planning",))],
+    )
+
+    assert decision.candidates == ()
+    assert decision.explicit_skill_count == 0
