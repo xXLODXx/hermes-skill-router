@@ -23,13 +23,14 @@ and guessing.
   packs. Broad action words such as `review`, `task` and `list` activate a
   topic only with a specific keyword or two corroborating broad signals, so
   unrelated workflow packs stay out.
-- **Live catalog scan.** Every message is scored against the tags, name,
-  category and description words of **all installed skills, scanned live** —
-  newly added skills route without any configuration.
+- **Loadable catalog.** In Hermes, the router follows the host's resolved
+  skill list (including trusted project and external roots, platform/disabled
+  gates and duplicate-name precedence), then scores name, tags and description.
+  Standalone validation without the host falls back to the local profile tree.
 - **Intent-aware dynamic budget.** Three candidates are injected by default;
   the budget grows only for exact user-named skills or qualified
-  matrix-required entries, up to six. Excess mandatory skills receive an
-  explicit privacy-safe audit reason instead of silently disappearing.
+  matrix-required entries, up to six. When mandatory skills exceed the budget,
+  the injection includes a bounded warning and the audit records the overflow.
 - **Negation-aware.** An explicitly excluded skill (`no plan`, `keinen Plan`,
   `ohne plan`) is rejected rather than elevated by its own name.
 - **Complete-token matching.** Short keywords such as `ui` never match inside
@@ -67,7 +68,9 @@ and guessing.
   gets one short hint; later empty turns stay silent and unrelated skills are
   never loaded.
 - **Safe hook integration.** Sparse observer hook payloads are accepted
-  safely; observer hooks never block the agent turn.
+  safely; observer hooks never block the agent turn. `skill_view` is marked
+  loaded only after a successful main-skill result; a failed load remains
+  eligible for retry.
 
 ### Routing Observatory (dashboard)
 

@@ -3,6 +3,5 @@ version: "0.8.12"
 description: Evidence-based, session-safe skill routing with auditable decisions, profile-safe homes and opt-in context rescue
 provides_hooks:
   - pre_llm_call
-  - pre_tool_call
   - post_tool_call
   - post_llm_call

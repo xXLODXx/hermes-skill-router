@@ -21,4 +21,12 @@ def render(decision: RoutingDecision) -> str | None:
         evidence = ", ".join(sorted({item.kind for item in candidate.evidence}))
         path = f"{candidate.skill.category}/{candidate.skill.name}" if candidate.skill.category else candidate.skill.name
         lines.append(f"- {path} — {candidate.decision}, {candidate.confidence:.2f} ({evidence})")
+    omitted = [item.skill.name for item in decision.rejected if item.reason == "Matrix-Pflichtbudget überschritten"]
+    if omitted:
+        preview = ", ".join(omitted[:3])
+        more = f" (+{len(omitted) - 3} more)" if len(omitted) > 3 else ""
+        lines.append(
+            f"Warning: {len(omitted)} required matrix skill{'s' if len(omitted) != 1 else ''} "
+            f"omitted by the injection budget: {preview}{more}. Check the skill index."
+        )
     return "\n".join(lines)

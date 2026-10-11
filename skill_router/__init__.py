@@ -8,12 +8,13 @@ existing dashboard/compatibility tests migrate.
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 
 from . import engine
 from .v2.audit import record as record_audit
-from .v2.catalog import cached_catalog
+from .v2.catalog import runtime_catalog
 from .v2.evidence import tokens
 from .v2.learning import context_rescue_enabled, output_learning_enabled
 from .v2.models import Evidence, SessionTurn
@@ -187,7 +188,7 @@ def register(ctx):
         if turn is None:
             return None
         home = engine.hermes_home()
-        skills = cached_catalog(home / "skills", _audit_path().with_name("catalog-cache.json"))
+        skills = runtime_catalog(home / "skills", _audit_path().with_name("catalog-cache.json"))
         loaded = _loaded_names(kwargs) | turn.already_loaded
         matrix_active = bool((path := _matrix_path()) and path.is_file())
         matrix, matrix_source = _matrix_evidence(user_message or "")
@@ -251,25 +252,26 @@ def register(ctx):
         _record(candidate_context_emitted=bool(context))
         return {"context": context} if context else None
 
-    def on_tool(tool_name: str, session_id: str, **kwargs):
+    def on_tool_result(function_name: str = "", result: object = None, session_id: str = "", **kwargs):
         if not session_id:
             return
         turn = _STORE.get(session_id)
         if turn is None:
             return
-        args = kwargs.get("function_args") or kwargs.get("args") or {}
-        target = args.get("name") if isinstance(args, dict) else None
-        if tool_name == "skill_view" and target:
-            loaded = set(turn.already_loaded)
-            loaded.add(str(target))
-            _STORE.update(session_id, already_loaded=loaded)
-        return
-
-    def on_tool_result(function_name: str = "", result: object = None, session_id: str = "", **kwargs):
-        if not session_id or not _buffering_enabled():
-            return
-        turn = _STORE.get(session_id)
-        if turn is not None:
+        if kwargs.get("tool_name", function_name) == "skill_view":
+            args = kwargs.get("args") or kwargs.get("function_args") or {}
+            if isinstance(args, dict) and args.get("name") and not args.get("file_path"):
+                try:
+                    payload = json.loads(result) if isinstance(result, str) else result
+                except (TypeError, ValueError):
+                    payload = None
+                if (kwargs.get("status") != "error" and isinstance(payload, dict)
+                        and payload.get("success") is True):
+                    _STORE.add_loaded(session_id, str(args["name"]))
+                else:
+                    # A failed load must not suppress a later retry as a duplicate.
+                    _STORE.update(session_id, last_signature=())
+        if _buffering_enabled():
             results = [*turn.tool_results, result][-3:]
             _STORE.update(session_id, tool_results=results)
         return
@@ -284,6 +286,5 @@ def register(ctx):
         return
 
     ctx.register_hook("pre_llm_call", inject)
-    ctx.register_hook("pre_tool_call", on_tool)
     ctx.register_hook("post_tool_call", on_tool_result)
     ctx.register_hook("post_llm_call", on_llm_response)

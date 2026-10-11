@@ -170,7 +170,7 @@ def select(
         distinct_kinds = {item.kind for item in evidence}
         has_exact_evidence = any(item.kind in {"name", "tag", "description", "learned", "matrix"} for item in evidence)
         is_matrix_required = any(item.kind == "matrix" and "Pflicht" in item.detail for item in evidence)
-        if score < 3.0 or not evidence or not has_exact_evidence:
+        if score < 3.0 or not evidence or not has_exact_evidence or not _has_specific_signal(evidence, dfs):
             if not has_exact_evidence:
                 reason = "isoliertes Stamm-/Teilwortsignal"
             elif not _has_specific_signal(evidence, dfs):
@@ -232,7 +232,7 @@ def select(
             decision="reject",
             reason=(
                 "Matrix-Pflichtbudget überschritten"
-                if any(ev.kind == "matrix" for ev in item.evidence)
+                if any(ev.kind == "matrix" and "Pflicht" in ev.detail for ev in item.evidence)
                 else "Explizites Kandidatenbudget überschritten"
             ),
         )

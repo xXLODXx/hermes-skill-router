@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import importlib
 import json
 import os
 import re
@@ -41,6 +42,7 @@ _EXCLUDED_DIRS = frozenset({
     ".venv", "venv", "node_modules", "site-packages", "__pycache__",
     ".tox", ".nox", ".pytest_cache", ".mypy_cache", ".ruff_cache",
 })
+_SUPPORT_DIRS = frozenset({"references", "templates", "assets", "scripts"})
 
 
 def _scan_ttl() -> float:
@@ -65,7 +67,8 @@ def _skill_paths(skills_dir: Path) -> tuple[Path, ...]:
         return cached[1]
     found: list[Path] = []
     for root, dirs, filenames in os.walk(skills_dir, followlinks=True):
-        dirs[:] = [d for d in dirs if d not in _EXCLUDED_DIRS]
+        excluded = _EXCLUDED_DIRS | (_SUPPORT_DIRS if "SKILL.md" in filenames else frozenset())
+        dirs[:] = [d for d in dirs if d not in excluded]
         if "SKILL.md" in filenames:
             found.append(Path(root) / "SKILL.md")
     paths = tuple(sorted(found))
@@ -224,3 +227,45 @@ def cached_catalog(skills_dir: Path, cache: Path) -> tuple[SkillRecord, ...]:
         if owner:
             with contextlib.suppress(OSError):
                 lock.unlink()
+
+
+def runtime_catalog(skills_dir: Path, cache: Path) -> tuple[SkillRecord, ...]:
+    """Align suggestions with Hermes' resolved visible/loadable skill entries.
+
+    Hermes resolves project, profile, create-dir and external roots together,
+    including disabled/platform gates and duplicate names. Keep the shared
+    parsed cache for local metadata; parse extra roots with the same bounded
+    per-file cache. Standalone plugin tests without Hermes retain local mode.
+    """
+    local = cached_catalog(skills_dir, cache)
+    try:
+        host_catalog = importlib.import_module("tools.skills_tool")._skill_catalog
+    except ModuleNotFoundError as exc:
+        return local if exc.name in {"tools", "tools.skills_tool"} else ()
+    except (ImportError, AttributeError):
+        return ()
+    try:
+        entries = host_catalog()
+    except Exception:  # noqa: BLE001 -- an unavailable host index must fail closed
+        return ()
+    local_by_source = {item.source: item for item in local}
+    resolved: dict[str, SkillRecord] = {}
+    for entry in entries:
+        load_name = entry.get("load_name")
+        if not load_name or entry.get("status") == "shadowed":
+            continue
+        path = Path(entry["path"])
+        source = str(path)
+        parsed = local_by_source.get(source) or _parse_skill(path, Path(entry["root"]))
+        if parsed is None:
+            continue
+        name = str(load_name)
+        record = SkillRecord(
+            name=name,
+            category="" if "/" in name else str(entry.get("category") or parsed.category),
+            description=str(entry.get("description") or parsed.description),
+            tags=parsed.tags,
+            source=source,
+        )
+        resolved.setdefault(record.canonical_name, record)
+    return tuple(resolved[key] for key in sorted(resolved))
