@@ -891,3 +891,124 @@ def test_missing_host_catalog_api_fails_closed(monkeypatch, tmp_path: Path) -> N
     monkeypatch.setitem(sys.modules, "tools", types.ModuleType("tools"))
     monkeypatch.setitem(sys.modules, "tools.skills_tool", types.ModuleType("tools.skills_tool"))
     assert catalog_mod.runtime_catalog(skills, tmp_path / "data" / "catalog-cache.json") == ()
+
+
+def test_resolved_host_catalog_is_reused_across_calls(monkeypatch, tmp_path: Path) -> None:
+    """An unchanged profile must not rescan the host catalog every routing turn."""
+    from skill_router.v2 import catalog as catalog_mod
+
+    skills = _skills(tmp_path)
+    fake_tools = types.ModuleType("tools")
+    fake_skills = types.ModuleType("tools.skills_tool")
+    calls = []
+
+    def rows():
+        calls.append(1)
+        return [{"path": skills / "software-development" / "pdf-extraction" / "SKILL.md",
+                 "root": skills, "category": "software-development", "status": "unique",
+                 "load_name": "pdf-extraction"}]
+
+    fake_skills.__dict__["_skill_catalog"] = rows
+    monkeypatch.setitem(sys.modules, "tools", fake_tools)
+    monkeypatch.setitem(sys.modules, "tools.skills_tool", fake_skills)
+    cache = tmp_path / "data" / "catalog-cache.json"
+    assert catalog_mod.runtime_catalog(skills, cache) == catalog_mod.runtime_catalog(skills, cache)
+    assert len(calls) == 1
+
+
+def test_host_visibility_ttl_avoids_rescanning_on_each_short_tree_ttl(monkeypatch, tmp_path: Path) -> None:
+    """Host resolution is much costlier than the parsed-tree cache on large homes."""
+    from skill_router.v2 import catalog as catalog_mod
+
+    monkeypatch.delenv("SKILL_ROUTER_SCAN_TTL", raising=False)
+    skills = _skills(tmp_path)
+    fake_tools = types.ModuleType("tools")
+    fake_skills = types.ModuleType("tools.skills_tool")
+    calls = []
+
+    def rows():
+        calls.append(1)
+        return [{"path": skills / "software-development" / "pdf-extraction" / "SKILL.md",
+                 "root": skills, "category": "software-development", "status": "unique",
+                 "load_name": "pdf-extraction"}]
+
+    fake_skills.__dict__["_skill_catalog"] = rows
+    monkeypatch.setitem(sys.modules, "tools", fake_tools)
+    monkeypatch.setitem(sys.modules, "tools.skills_tool", fake_skills)
+    cache = tmp_path / "data" / "catalog-cache.json"
+    catalog_mod.runtime_catalog(skills, cache)
+    shared = cache.with_name("resolved-catalog.json")
+    data = json.loads(shared.read_text(encoding="utf-8"))
+    data["ts"] -= 16
+    shared.write_text(json.dumps(data), encoding="utf-8")
+    catalog_mod.runtime_catalog(skills, cache)
+    assert len(calls) == 1
+
+
+def test_resolved_catalog_cache_tracks_config_and_project_roots(monkeypatch, tmp_path: Path) -> None:
+    """Disabled config and session project changes must invalidate shared visibility."""
+    from skill_router.v2 import catalog as catalog_mod
+
+    skills = _skills(tmp_path)
+    project = tmp_path / "trusted-project" / "skills"
+    project.mkdir(parents=True)
+    config = tmp_path / "config.yaml"
+    config.write_text("skills: {}\n", encoding="utf-8")
+    roots = [(1, skills)]
+    calls = []
+    fake_agent = types.ModuleType("agent")
+    fake_utils = types.ModuleType("agent.skill_utils")
+    fake_utils.__dict__["get_skill_search_roots"] = lambda local: roots
+    fake_tools = types.ModuleType("tools")
+    fake_skills = types.ModuleType("tools.skills_tool")
+
+    def rows():
+        calls.append(1)
+        return [{"path": skills / "software-development" / "pdf-extraction" / "SKILL.md",
+                 "root": skills, "category": "software-development", "status": "unique",
+                 "load_name": "pdf-extraction"}]
+
+    fake_skills.__dict__["_skill_catalog"] = rows
+    for module, value in (("agent", fake_agent), ("agent.skill_utils", fake_utils),
+                          ("tools", fake_tools), ("tools.skills_tool", fake_skills)):
+        monkeypatch.setitem(sys.modules, module, value)
+    cache = tmp_path / "data" / "catalog-cache.json"
+    catalog_mod.runtime_catalog(skills, cache)
+    catalog_mod.runtime_catalog(skills, cache)
+    assert len(calls) == 1
+    mtime = config.stat().st_mtime_ns
+    os.utime(config, ns=(mtime + 10**9, mtime + 10**9))
+    catalog_mod.runtime_catalog(skills, cache)
+    assert len(calls) == 2
+    roots.insert(0, (0, project))
+    catalog_mod.runtime_catalog(skills, cache)
+    assert len(calls) == 3
+
+
+def test_resolved_catalog_cache_isolated_by_session_platform(monkeypatch, tmp_path: Path) -> None:
+    from skill_router.v2 import catalog as catalog_mod
+
+    skills = _skills(tmp_path)
+    current = ["telegram"]
+    calls = []
+    fake_gateway = types.ModuleType("gateway")
+    fake_context = types.ModuleType("gateway.session_context")
+    fake_context.__dict__["get_session_env"] = lambda _: current[0]
+    fake_tools = types.ModuleType("tools")
+    fake_skills = types.ModuleType("tools.skills_tool")
+
+    def rows():
+        calls.append(current[0])
+        return [{"path": skills / "software-development" / "pdf-extraction" / "SKILL.md",
+                 "root": skills, "category": "software-development", "status": "unique",
+                 "load_name": "pdf-extraction"}]
+
+    fake_skills.__dict__["_skill_catalog"] = rows
+    for module, value in (("gateway", fake_gateway), ("gateway.session_context", fake_context),
+                          ("tools", fake_tools), ("tools.skills_tool", fake_skills)):
+        monkeypatch.setitem(sys.modules, module, value)
+    cache = tmp_path / "data" / "catalog-cache.json"
+    catalog_mod.runtime_catalog(skills, cache)
+    current[0] = "discord"
+    catalog_mod.runtime_catalog(skills, cache)
+    assert calls == ["telegram", "discord"]

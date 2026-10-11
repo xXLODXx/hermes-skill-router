@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 import importlib
 import json
+import math
 import os
 import re
 import threading
@@ -43,6 +44,7 @@ _EXCLUDED_DIRS = frozenset({
     ".tox", ".nox", ".pytest_cache", ".mypy_cache", ".ruff_cache",
 })
 _SUPPORT_DIRS = frozenset({"references", "templates", "assets", "scripts"})
+_VISIBILITY_TTL_DEFAULT = 60.0
 
 
 def _scan_ttl() -> float:
@@ -56,6 +58,18 @@ def _scan_ttl() -> float:
         if value >= 0:
             return value
     return _SCAN_TTL_DEFAULT
+
+
+def _visibility_ttl() -> float:
+    """Longer host-index TTL; zero scan TTL disables both shared caches."""
+    if _scan_ttl() == 0:
+        return 0.0
+    raw = os.environ.get("SKILL_ROUTER_VISIBILITY_TTL", "").strip()
+    try:
+        value = float(raw) if raw else _VISIBILITY_TTL_DEFAULT
+    except ValueError:
+        return _VISIBILITY_TTL_DEFAULT
+    return value if math.isfinite(value) and value >= 0 else _VISIBILITY_TTL_DEFAULT
 
 
 def _skill_paths(skills_dir: Path) -> tuple[Path, ...]:
@@ -238,34 +252,105 @@ def runtime_catalog(skills_dir: Path, cache: Path) -> tuple[SkillRecord, ...]:
     per-file cache. Standalone plugin tests without Hermes retain local mode.
     """
     local = cached_catalog(skills_dir, cache)
+    session_platform = os.environ.get("HERMES_PLATFORM") or os.environ.get("HERMES_SESSION_PLATFORM", "")
+    if not session_platform:
+        try:
+            session_platform = importlib.import_module("gateway.session_context").get_session_env(
+                "HERMES_SESSION_PLATFORM"
+            ) or ""
+        except (ImportError, AttributeError, OSError):
+            pass
+    # An independent, shared visibility snapshot avoids re-importing and
+    # re-scanning the host's full skill catalog in every fresh Hermes process.
+    # Root identity includes trusted project and external roots; the config
+    # signature catches disabled/root changes between turns.
+    roots: list[tuple[int, Path]] = [(1, skills_dir)]
     try:
-        host_catalog = importlib.import_module("tools.skills_tool")._skill_catalog
+        roots = importlib.import_module("agent.skill_utils").get_skill_search_roots(local=skills_dir)
     except ModuleNotFoundError as exc:
-        return local if exc.name in {"tools", "tools.skills_tool"} else ()
-    except (ImportError, AttributeError):
+        if exc.name not in {"agent", "agent.skill_utils"}:
+            return ()
+    except (ImportError, AttributeError, OSError):
         return ()
     try:
-        entries = host_catalog()
-    except Exception:  # noqa: BLE001 -- an unavailable host index must fail closed
+        signature = [
+            1,
+            str(skills_dir),
+            _mtime_ns(str(skills_dir.parent / "config.yaml")),
+            session_platform,
+            [[tier, _signature(Path(root)) if Path(root).is_dir() else [str(root), None]] for tier, root in roots],
+        ]
+    except OSError:
         return ()
-    local_by_source = {item.source: item for item in local}
-    resolved: dict[str, SkillRecord] = {}
-    for entry in entries:
-        load_name = entry.get("load_name")
-        if not load_name or entry.get("status") == "shadowed":
-            continue
-        path = Path(entry["path"])
-        source = str(path)
-        parsed = local_by_source.get(source) or _parse_skill(path, Path(entry["root"]))
-        if parsed is None:
-            continue
-        name = str(load_name)
-        record = SkillRecord(
-            name=name,
-            category="" if "/" in name else str(entry.get("category") or parsed.category),
-            description=str(entry.get("description") or parsed.description),
-            tags=parsed.tags,
-            source=source,
-        )
-        resolved.setdefault(record.canonical_name, record)
-    return tuple(resolved[key] for key in sorted(resolved))
+    shared = cache.with_name("resolved-catalog.json")
+    ttl = _visibility_ttl()
+    previous: tuple[SkillRecord, ...] = ()
+    same = False
+    if ttl > 0:
+        try:
+            data = json.loads(shared.read_text(encoding="utf-8"))
+            previous = tuple(SkillRecord(**{**item, "tags": tuple(item["tags"])}) for item in data["records"])
+            same = data["signature"] == signature
+            if same and 0 <= time.time() - data["ts"] < ttl:
+                return previous
+        except (OSError, ValueError, KeyError, TypeError):
+            pass
+    lock = shared.with_name(shared.name + ".lock")
+    owner = False
+    if ttl > 0:
+        try:
+            shared.parent.mkdir(parents=True, exist_ok=True)
+            if lock.exists() and not 0 <= time.time() - lock.stat().st_mtime <= _LOCK_STALE_S:
+                lock.unlink()
+            os.close(os.open(lock, os.O_CREAT | os.O_EXCL))
+            owner = True
+        except FileExistsError:
+            if same:
+                return previous
+        except OSError:
+            pass
+    try:
+        try:
+            host_catalog = importlib.import_module("tools.skills_tool")._skill_catalog
+        except ModuleNotFoundError as exc:
+            return local if exc.name in {"tools", "tools.skills_tool"} else ()
+        except (ImportError, AttributeError):
+            return ()
+        try:
+            entries = host_catalog()
+        except Exception:  # noqa: BLE001 -- an unavailable host index must fail closed
+            return ()
+        local_by_source = {item.source: item for item in local}
+        resolved: dict[str, SkillRecord] = {}
+        for entry in entries:
+            load_name = entry.get("load_name")
+            if not load_name or entry.get("status") == "shadowed":
+                continue
+            path = Path(entry["path"])
+            source = str(path)
+            parsed = local_by_source.get(source) or _parse_skill(path, Path(entry["root"]))
+            if parsed is None:
+                continue
+            name = str(load_name)
+            record = SkillRecord(
+                name=name,
+                category="" if "/" in name else str(entry.get("category") or parsed.category),
+                description=str(entry.get("description") or parsed.description),
+                tags=parsed.tags,
+                source=source,
+            )
+            resolved.setdefault(record.canonical_name, record)
+        result = tuple(resolved[key] for key in sorted(resolved))
+        if owner:
+            tmp = shared.with_name(f"{shared.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+            with contextlib.suppress(OSError):
+                tmp.write_text(json.dumps({"signature": signature, "ts": time.time(),
+                                           "records": [asdict(item) for item in result]}), encoding="utf-8")
+                os.replace(tmp, shared)
+            with contextlib.suppress(OSError):
+                tmp.unlink(missing_ok=True)
+        return result
+    finally:
+        if owner:
+            with contextlib.suppress(OSError):
+                lock.unlink()
