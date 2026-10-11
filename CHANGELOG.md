@@ -3,6 +3,33 @@
 Alle nennenswerten Änderungen am Skill-Router-Plugin. Format orientiert sich an
 Keep a Changelog; Versionierung: SemVer-PoC (0.x).
 
+## 0.8.13 — 2026-10-11
+
+### Performance
+- Ein profilbezogener JSON-Katalog-Cache teilt geparste Skills zwischen
+  Prozessen; der aufgelöste Host-Katalog erhält einen separaten 60-s-Cache
+  mit Signatur über Konfiguration, Skill-Roots und Session-Plattform. Neue
+  Skills und Config-Wechsel invalidieren die Signatur; Inhaltsänderungen
+  wirken spätestens nach der jeweiligen TTL. Beide Caches sind mit
+  `SKILL_ROUTER_SCAN_TTL=0` abschaltbar.
+
+### Fixed
+- Archivierte und verschachtelte Support-Skills werden nicht mehr geroutet;
+  im Hermes-Host folgt der Router dessen sichtbarer, ladbarer Skill-Auflösung
+  einschließlich deaktivierter, fremder und Projekt-Skills sowie Kollisionen.
+- Mehrere häufige Katalogwörter reichen ohne spezifisches Signal nicht mehr
+  für eine Empfehlung.
+- Matrix-Pflichtüberlauf wird begrenzt im injizierten Kontext gemeldet;
+  optionaler Überlauf wird nicht fälschlich als Pflicht gekennzeichnet.
+- `skill_view` zählt erst nach erfolgreicher Hauptdatei-Ladung als geladen;
+  Fehler bleiben erneut ladbar, parallele Erfolge werden atomar vereinigt.
+  Der überflüssige Pre-Tool-Hook entfällt.
+
+### Contributors
+- Danke an [@deadczarvc](https://github.com/deadczarvc) für den
+  prozessübergreifenden Katalog-Cache in
+  [PR #22](https://github.com/xXLODXx/hermes-skill-router/pull/22).
+
 ## 0.8.12 — 2026-10-03
 
 ### Fixed

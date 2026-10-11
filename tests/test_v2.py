@@ -2,6 +2,10 @@
 
 import json
 import os
+import sys
+import threading
+import types
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from skill_router.v2.audit import record
@@ -256,6 +260,63 @@ def test_hook_persists_external_loaded_skills(monkeypatch, tmp_path: Path) -> No
     assert context.hooks["post_llm_call"]() is None
 
 
+def test_skill_is_loaded_only_after_successful_main_skill_view(monkeypatch, tmp_path: Path) -> None:
+    """Denied calls and supporting-file reads must not suppress the next suggestion."""
+    import skill_router
+
+    context = _registered(monkeypatch, tmp_path)
+    inject = context.hooks["pre_llm_call"]
+    assert "pre_tool_call" not in context.hooks
+    after = context.hooks["post_tool_call"]
+    session = "s-view-outcome"
+    assert inject("prüfe Android emulator", session) is not None
+    args = {"name": "android-emulator"}
+    after(tool_name="skill_view", session_id=session, args=args, status="error", result={"success": False})
+    state = skill_router._STORE.get(session)
+    assert state is not None and "android-emulator" not in state.already_loaded
+    assert inject("prüfe Android emulator", session) is not None
+    support = {"name": "android-emulator", "file_path": "references/details.md"}
+    after(tool_name="skill_view", session_id=session, args=support, status="ok", result={"success": True})
+    state = skill_router._STORE.get(session)
+    assert state is not None and "android-emulator" not in state.already_loaded
+    after(tool_name="skill_view", session_id=session, args=args, status="ok", result=json.dumps({"success": True}))
+    state = skill_router._STORE.get(session)
+    assert state is not None and "android-emulator" in state.already_loaded
+    assert inject("prüfe Android emulator", session) is None
+
+
+def test_parallel_successful_skill_views_accumulate_loaded_names(monkeypatch, tmp_path: Path) -> None:
+    """One session can receive independent post-tool results concurrently."""
+    import skill_router
+
+    store = SessionStore()
+    monkeypatch.setattr(skill_router, "_STORE", store)
+    context = _registered(monkeypatch, tmp_path)
+    session = "s-parallel-views"
+    context.hooks["pre_llm_call"]("prüfe Android emulator und PDF OCR", session)
+    barrier = threading.Barrier(2)
+    original_get = store.get
+
+    def synchronized_get(sid):
+        snapshot = original_get(sid)
+        if threading.current_thread() is not threading.main_thread():
+            barrier.wait(timeout=5)
+        return snapshot
+
+    monkeypatch.setattr(store, "get", synchronized_get)
+    after = context.hooks["post_tool_call"]
+
+    def complete(name):
+        after(tool_name="skill_view", session_id=session, args={"name": name}, status="ok",
+              result=json.dumps({"success": True}))
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        list(pool.map(complete, ["android-emulator", "pdf-extraction"]))
+    state = original_get(session)
+    assert state is not None
+    assert {"android-emulator", "pdf-extraction"} <= state.already_loaded
+
+
 def test_fallback_hint_once_on_first_turn(monkeypatch, tmp_path: Path) -> None:
     context = _registered(monkeypatch, tmp_path)
     inject = context.hooks["pre_llm_call"]
@@ -319,6 +380,52 @@ def test_candidate_budget_is_hard_capped() -> None:
     assert len(decision.candidates) == 3
     assert len(decision.rejected) == 5
     assert all(item.reason == "Kandidatenbudget überschritten" for item in decision.rejected)
+
+
+def test_required_matrix_overflow_is_visible_in_injected_context() -> None:
+    """A bounded injection must not imply that the whole required pack was delivered."""
+    skills = [SkillRecord(f"mandatory-{i}", "test") for i in range(7)]
+    matrix = {skill.name: (Evidence("matrix", "pack", 6.0, "Matrix: Pflicht"),) for skill in skills}
+    decision = select("neutral", skills, matrix=matrix)
+    assert len(decision.candidates) == 6
+    context = render(decision)
+    assert context is not None
+    assert "1 required matrix skill omitted" in context
+    assert "mandatory-6" in context
+
+
+def test_large_required_matrix_overflow_keeps_warning_bounded() -> None:
+    skills = [SkillRecord(f"mandatory-{i}", "test") for i in range(20)]
+    matrix = {skill.name: (Evidence("matrix", "pack", 6.0, "Matrix: Pflicht"),) for skill in skills}
+    decision = select("neutral", skills, matrix=matrix)
+    context = render(decision)
+    assert context is not None
+    assert "14 required matrix skills omitted" in context
+    assert "+11 more" in context
+
+
+def test_explicit_optional_matrix_overflow_is_not_called_required() -> None:
+    skills = [SkillRecord(f"optional-{i}", "test") for i in range(7)]
+    matrix = {skill.name: (Evidence("matrix", "pack", 4.0, "Matrix: Optional"),) for skill in skills}
+    decision = select(" ".join(skill.name for skill in skills), skills, matrix=matrix)
+    assert len(decision.candidates) == 6
+    assert len([item for item in decision.rejected if "budget" in item.reason.casefold()]) == 1
+    assert not any(item.reason == "Matrix-Pflichtbudget überschritten" for item in decision.rejected)
+    assert "required matrix skill omitted" not in (render(decision) or "")
+
+
+def test_common_catalog_words_alone_do_not_recommend_arbitrary_skills() -> None:
+    skills = [SkillRecord(f"item-{i}", "test", tags=("commonword", "sharedword")) for i in range(12)]
+    decision = select("commonword sharedword", skills)
+    assert decision.candidates == ()
+    assert decision.fallback_reason == "no_high_confidence_match"
+
+
+def test_rare_corroborating_tag_remains_selectable() -> None:
+    skills = [SkillRecord(f"item-{i}", "test", tags=("commonword", "sharedword")) for i in range(12)]
+    skills[0] = SkillRecord("item-0", "test", tags=("commonword", "sharedword", "uniqueword"))
+    decision = select("commonword sharedword uniqueword", skills)
+    assert [item.skill.name for item in decision.candidates] == ["item-0"]
 
 
 def test_language_neutral_stem_evidence() -> None:
@@ -710,3 +817,198 @@ def test_catalog_never_routes_to_archived_or_backup_skills(tmp_path: Path) -> No
     assert {r.name for r in scan_catalog(skills)} == {"android-emulator", "pdf-extraction"}
     cached_names = {r.name for r in catalog_mod.cached_catalog(skills, cache)}
     assert cached_names == {"android-emulator", "pdf-extraction"}
+
+
+def test_catalog_ignores_skills_inside_support_directories(tmp_path: Path) -> None:
+    """References belonging to a skill are not independent Hermes skills."""
+    skills = _skills(tmp_path)
+    support = skills / "software-development" / "android-emulator" / "references" / "ghost"
+    support.mkdir(parents=True)
+    (support / "SKILL.md").write_text("---\nname: ghost\n---\n", encoding="utf-8")
+    assert {r.name for r in scan_catalog(skills)} == {"android-emulator", "pdf-extraction"}
+
+
+def test_host_visible_catalog_excludes_shadowed_and_includes_external(monkeypatch, tmp_path: Path) -> None:
+    """Router suggestions must use the loadable names and sources Hermes resolves."""
+    from skill_router.v2 import catalog as catalog_mod
+
+    skills = _skills(tmp_path)
+    external = tmp_path / "external"
+    extra = external / "external-tool"
+    extra.mkdir(parents=True)
+    (extra / "SKILL.md").write_text("---\nname: external-tool\nmetadata:\n  hermes:\n    tags: [outside]\n---\n", encoding="utf-8")
+    rows = [
+        {"path": skills / "software-development" / "android-emulator" / "SKILL.md", "root": skills,
+         "category": "software-development", "load_name": None, "status": "shadowed"},
+        {"path": extra / "SKILL.md", "root": external, "category": "external", "description": "Host-index description",
+         "load_name": "external-tool",
+         "status": "unique"},
+    ]
+    fake_tools = types.ModuleType("tools")
+    fake_skills = types.ModuleType("tools.skills_tool")
+    fake_skills.__dict__["_skill_catalog"] = lambda: rows
+    monkeypatch.setitem(sys.modules, "tools", fake_tools)
+    monkeypatch.setitem(sys.modules, "tools.skills_tool", fake_skills)
+    found = catalog_mod.runtime_catalog(skills, tmp_path / "data" / "catalog-cache.json")
+    assert [r.name for r in found] == ["external-tool"]
+    assert found[0].source == str(extra / "SKILL.md")
+    assert "outside" in found[0].tags
+    assert found[0].description == "Host-index description"
+
+
+def test_host_catalog_failure_does_not_recommend_unverified_local_skills(monkeypatch, tmp_path: Path) -> None:
+    from skill_router.v2 import catalog as catalog_mod
+
+    skills = _skills(tmp_path)
+    fake_tools = types.ModuleType("tools")
+    fake_skills = types.ModuleType("tools.skills_tool")
+
+    def unavailable():
+        raise RuntimeError("host index unavailable")
+
+    fake_skills.__dict__["_skill_catalog"] = unavailable
+    monkeypatch.setitem(sys.modules, "tools", fake_tools)
+    monkeypatch.setitem(sys.modules, "tools.skills_tool", fake_skills)
+    assert catalog_mod.runtime_catalog(skills, tmp_path / "data" / "catalog-cache.json") == ()
+
+
+def test_broken_host_import_is_not_mistaken_for_standalone_mode(monkeypatch, tmp_path: Path) -> None:
+    from skill_router.v2 import catalog as catalog_mod
+
+    skills = _skills(tmp_path)
+
+    def broken(_):
+        raise ModuleNotFoundError("No module named 'host_dependency'", name="host_dependency")
+
+    monkeypatch.setattr(catalog_mod.importlib, "import_module", broken)
+    assert catalog_mod.runtime_catalog(skills, tmp_path / "data" / "catalog-cache.json") == ()
+
+
+def test_missing_host_catalog_api_fails_closed(monkeypatch, tmp_path: Path) -> None:
+    from skill_router.v2 import catalog as catalog_mod
+
+    skills = _skills(tmp_path)
+    monkeypatch.setitem(sys.modules, "tools", types.ModuleType("tools"))
+    monkeypatch.setitem(sys.modules, "tools.skills_tool", types.ModuleType("tools.skills_tool"))
+    assert catalog_mod.runtime_catalog(skills, tmp_path / "data" / "catalog-cache.json") == ()
+
+
+def test_resolved_host_catalog_is_reused_across_calls(monkeypatch, tmp_path: Path) -> None:
+    """An unchanged profile must not rescan the host catalog every routing turn."""
+    from skill_router.v2 import catalog as catalog_mod
+
+    skills = _skills(tmp_path)
+    fake_tools = types.ModuleType("tools")
+    fake_skills = types.ModuleType("tools.skills_tool")
+    calls = []
+
+    def rows():
+        calls.append(1)
+        return [{"path": skills / "software-development" / "pdf-extraction" / "SKILL.md",
+                 "root": skills, "category": "software-development", "status": "unique",
+                 "load_name": "pdf-extraction"}]
+
+    fake_skills.__dict__["_skill_catalog"] = rows
+    monkeypatch.setitem(sys.modules, "tools", fake_tools)
+    monkeypatch.setitem(sys.modules, "tools.skills_tool", fake_skills)
+    cache = tmp_path / "data" / "catalog-cache.json"
+    assert catalog_mod.runtime_catalog(skills, cache) == catalog_mod.runtime_catalog(skills, cache)
+    assert len(calls) == 1
+
+
+def test_host_visibility_ttl_avoids_rescanning_on_each_short_tree_ttl(monkeypatch, tmp_path: Path) -> None:
+    """Host resolution is much costlier than the parsed-tree cache on large homes."""
+    from skill_router.v2 import catalog as catalog_mod
+
+    monkeypatch.delenv("SKILL_ROUTER_SCAN_TTL", raising=False)
+    skills = _skills(tmp_path)
+    fake_tools = types.ModuleType("tools")
+    fake_skills = types.ModuleType("tools.skills_tool")
+    calls = []
+
+    def rows():
+        calls.append(1)
+        return [{"path": skills / "software-development" / "pdf-extraction" / "SKILL.md",
+                 "root": skills, "category": "software-development", "status": "unique",
+                 "load_name": "pdf-extraction"}]
+
+    fake_skills.__dict__["_skill_catalog"] = rows
+    monkeypatch.setitem(sys.modules, "tools", fake_tools)
+    monkeypatch.setitem(sys.modules, "tools.skills_tool", fake_skills)
+    cache = tmp_path / "data" / "catalog-cache.json"
+    catalog_mod.runtime_catalog(skills, cache)
+    shared = cache.with_name("resolved-catalog.json")
+    data = json.loads(shared.read_text(encoding="utf-8"))
+    data["ts"] -= 16
+    shared.write_text(json.dumps(data), encoding="utf-8")
+    catalog_mod.runtime_catalog(skills, cache)
+    assert len(calls) == 1
+
+
+def test_resolved_catalog_cache_tracks_config_and_project_roots(monkeypatch, tmp_path: Path) -> None:
+    """Disabled config and session project changes must invalidate shared visibility."""
+    from skill_router.v2 import catalog as catalog_mod
+
+    skills = _skills(tmp_path)
+    project = tmp_path / "trusted-project" / "skills"
+    project.mkdir(parents=True)
+    config = tmp_path / "config.yaml"
+    config.write_text("skills: {}\n", encoding="utf-8")
+    roots = [(1, skills)]
+    calls = []
+    fake_agent = types.ModuleType("agent")
+    fake_utils = types.ModuleType("agent.skill_utils")
+    fake_utils.__dict__["get_skill_search_roots"] = lambda local: roots
+    fake_tools = types.ModuleType("tools")
+    fake_skills = types.ModuleType("tools.skills_tool")
+
+    def rows():
+        calls.append(1)
+        return [{"path": skills / "software-development" / "pdf-extraction" / "SKILL.md",
+                 "root": skills, "category": "software-development", "status": "unique",
+                 "load_name": "pdf-extraction"}]
+
+    fake_skills.__dict__["_skill_catalog"] = rows
+    for module, value in (("agent", fake_agent), ("agent.skill_utils", fake_utils),
+                          ("tools", fake_tools), ("tools.skills_tool", fake_skills)):
+        monkeypatch.setitem(sys.modules, module, value)
+    cache = tmp_path / "data" / "catalog-cache.json"
+    catalog_mod.runtime_catalog(skills, cache)
+    catalog_mod.runtime_catalog(skills, cache)
+    assert len(calls) == 1
+    mtime = config.stat().st_mtime_ns
+    os.utime(config, ns=(mtime + 10**9, mtime + 10**9))
+    catalog_mod.runtime_catalog(skills, cache)
+    assert len(calls) == 2
+    roots.insert(0, (0, project))
+    catalog_mod.runtime_catalog(skills, cache)
+    assert len(calls) == 3
+
+
+def test_resolved_catalog_cache_isolated_by_session_platform(monkeypatch, tmp_path: Path) -> None:
+    from skill_router.v2 import catalog as catalog_mod
+
+    skills = _skills(tmp_path)
+    current = ["telegram"]
+    calls = []
+    fake_gateway = types.ModuleType("gateway")
+    fake_context = types.ModuleType("gateway.session_context")
+    fake_context.__dict__["get_session_env"] = lambda _: current[0]
+    fake_tools = types.ModuleType("tools")
+    fake_skills = types.ModuleType("tools.skills_tool")
+
+    def rows():
+        calls.append(current[0])
+        return [{"path": skills / "software-development" / "pdf-extraction" / "SKILL.md",
+                 "root": skills, "category": "software-development", "status": "unique",
+                 "load_name": "pdf-extraction"}]
+
+    fake_skills.__dict__["_skill_catalog"] = rows
+    for module, value in (("gateway", fake_gateway), ("gateway.session_context", fake_context),
+                          ("tools", fake_tools), ("tools.skills_tool", fake_skills)):
+        monkeypatch.setitem(sys.modules, module, value)
+    cache = tmp_path / "data" / "catalog-cache.json"
+    catalog_mod.runtime_catalog(skills, cache)
+    current[0] = "discord"
+    catalog_mod.runtime_catalog(skills, cache)
+    assert calls == ["telegram", "discord"]

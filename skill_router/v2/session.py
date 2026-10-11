@@ -68,6 +68,18 @@ class SessionStore:
             current = item[1]
             self._items[session_id] = (now, replace(current, **cast(Any, changes)))
 
+    def add_loaded(self, session_id: str, name: str) -> None:
+        """Union one successful load under the lock; never overwrite a peer result."""
+        now = time.monotonic()
+        with self._lock:
+            item = self._items.get(session_id)
+            if item is None:
+                return
+            current = item[1]
+            self._items[session_id] = (
+                now, replace(current, already_loaded=current.already_loaded | {name})
+            )
+
     def size(self) -> int:
         with self._lock:
             self._cleanup(time.monotonic())

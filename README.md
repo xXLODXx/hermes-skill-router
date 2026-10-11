@@ -23,13 +23,14 @@ and guessing.
   packs. Broad action words such as `review`, `task` and `list` activate a
   topic only with a specific keyword or two corroborating broad signals, so
   unrelated workflow packs stay out.
-- **Live catalog scan.** Every message is scored against the tags, name,
-  category and description words of **all installed skills, scanned live** —
-  newly added skills route without any configuration.
+- **Loadable catalog.** In Hermes, the router follows the host's resolved
+  skill list (including trusted project and external roots, platform/disabled
+  gates and duplicate-name precedence), then scores name, tags and description.
+  Standalone validation without the host falls back to the local profile tree.
 - **Intent-aware dynamic budget.** Three candidates are injected by default;
   the budget grows only for exact user-named skills or qualified
-  matrix-required entries, up to six. Excess mandatory skills receive an
-  explicit privacy-safe audit reason instead of silently disappearing.
+  matrix-required entries, up to six. When mandatory skills exceed the budget,
+  the injection includes a bounded warning and the audit records the overflow.
 - **Negation-aware.** An explicitly excluded skill (`no plan`, `keinen Plan`,
   `ohne plan`) is rejected rather than elevated by its own name.
 - **Complete-token matching.** Short keywords such as `ui` never match inside
@@ -67,7 +68,9 @@ and guessing.
   gets one short hint; later empty turns stay silent and unrelated skills are
   never loaded.
 - **Safe hook integration.** Sparse observer hook payloads are accepted
-  safely; observer hooks never block the agent turn.
+  safely; observer hooks never block the agent turn. `skill_view` is marked
+  loaded only after a successful main-skill result; a failed load remains
+  eligible for retry.
 
 ### Routing Observatory (dashboard)
 
@@ -125,11 +128,23 @@ python scripts/analyze_v2_metrics.py data/v2_injections.jsonl
 ### Performance
 
 - Skills-tree walks are TTL-cached (`SKILL_ROUTER_SCAN_TTL`, default 15 s) and
-  the tokenizer is memoized: routing takes **~16 ms** per message.
+  the tokenizer is memoized. Latency depends on the profile and skill count;
+  measure the actual first and warm turns before tuning the TTL.
 - The parsed catalog is shared across processes in `catalog-cache.json` next to
   the audit log: skills added or removed directly under the root or a first-level
   category appear on the next call. Deeper tree changes and edits inside a
   `SKILL.md` appear within `SKILL_ROUTER_SCAN_TTL` (`0` turns the shared cache off).
+- Host-resolved visibility is also shared across processes in
+  `resolved-catalog.json`: its signature covers the active profile, configured
+  skill roots, profile config and session platform. A new host scan is needed
+  after a signature change or its separate `SKILL_ROUTER_VISIBILITY_TTL`
+  (default 60 s). This limits expensive full host scans while keeping disabled
+  and project-scoped skills isolated; an edit to existing skill metadata may
+  take up to that TTL to affect host visibility. Setting `SKILL_ROUTER_SCAN_TTL=0`
+  disables both shared caches.
+  While one process rebuilds under the lock, peers keep serving the previous
+  snapshot (worst case TTL + 120 s lock staleness). The very first call after
+  installation pays the full host resolution once.
 - Injections use a compact one-line format — **~70 tokens** each
   (⌀ ~276 characters), 0 tokens for same-topic follow-ups.
 
@@ -238,6 +253,11 @@ pytest
 
 Tests build a temporary `HERMES_HOME` with fixture skills and verify matching,
 matrix parsing, learning and topic-change behavior end-to-end.
+
+## Contributors
+
+Thank you to [@deadczarvc](https://github.com/deadczarvc) for contributing
+the cross-process skill-catalog cache in [PR #22](https://github.com/xXLODXx/hermes-skill-router/pull/22).
 
 ## License
 
