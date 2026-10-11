@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import contextlib
+import json
 import os
 import re
+import threading
 import time
+from dataclasses import asdict
 from pathlib import Path
 
 from .models import SkillRecord
@@ -29,6 +33,14 @@ _MAX_PARSE_CACHE = 4096
 _SCAN_CACHE: dict[str, tuple[float, tuple[Path, ...]]] = {}
 _SCAN_TTL_DEFAULT = 15.0
 _MAX_SCAN_CACHE = 16
+# Match the relevant Hermes skill-scanner exclusions without importing the
+# host's skill_utils (plugins also run in standalone validation). In particular,
+# curator archives are not installed skills and must never become candidates.
+_EXCLUDED_DIRS = frozenset({
+    ".git", ".github", ".hub", ".archive", ".curator_backups", ".locks",
+    ".venv", "venv", "node_modules", "site-packages", "__pycache__",
+    ".tox", ".nox", ".pytest_cache", ".mypy_cache", ".ruff_cache",
+})
 
 
 def _scan_ttl() -> float:
@@ -51,14 +63,12 @@ def _skill_paths(skills_dir: Path) -> tuple[Path, ...]:
     cached = _SCAN_CACHE.get(key)
     if cached is not None and now - cached[0] < _scan_ttl():
         return cached[1]
-    paths = tuple(
-        sorted(
-            Path(root) / filename
-            for root, _, filenames in os.walk(skills_dir, followlinks=True)
-            for filename in filenames
-            if filename == "SKILL.md"
-        )
-    )
+    found: list[Path] = []
+    for root, dirs, filenames in os.walk(skills_dir, followlinks=True):
+        dirs[:] = [d for d in dirs if d not in _EXCLUDED_DIRS]
+        if "SKILL.md" in filenames:
+            found.append(Path(root) / "SKILL.md")
+    paths = tuple(sorted(found))
     if len(_SCAN_CACHE) >= _MAX_SCAN_CACHE:
         _SCAN_CACHE.clear()
     _SCAN_CACHE[key] = (now, paths)
@@ -127,3 +137,90 @@ def scan_catalog(skills_dir: Path) -> tuple[SkillRecord, ...]:
             continue
         records[key] = record
     return tuple(records[key] for key in sorted(records))
+
+
+# Shared catalog cache: the in-process caches above still stat every SKILL.md
+# on each call and start empty in every new process. With thousands of skills
+# and several sessions starting at once, each process paid a full read. One
+# JSON file per home lets processes share the last scan.
+_LOCK_STALE_S = 120.0
+
+
+def _mtime_ns(path: str) -> int | None:
+    try:
+        return os.stat(path).st_mtime_ns
+    except OSError:  # a dangling symlink or junction: the tree walk skips it too
+        return None
+
+
+def _signature(skills_dir: Path) -> list:
+    """Cheap change marker: adding or removing a skill changes the mtime of its
+    parent folder (the skills root or a category folder)."""
+    with os.scandir(skills_dir) as entries:
+        # os.stat, not entry.stat(): on NTFS the parent listing reports a
+        # folder mtime with a delay, the folder itself is current.
+        folders = sorted([e.name, _mtime_ns(e.path)] for e in entries if e.name not in _EXCLUDED_DIRS and e.is_dir())
+    return [str(skills_dir), skills_dir.stat().st_mtime_ns, *folders]
+
+
+def cached_catalog(skills_dir: Path, cache: Path) -> tuple[SkillRecord, ...]:
+    """``scan_catalog`` shared across processes through ``cache``.
+
+    Added or removed skills directly under the root or its first-level folders
+    show up on the next call. Deeper tree changes and SKILL.md edits show up
+    within ``SKILL_ROUTER_SCAN_TTL`` seconds (0 = no shared cache). On expiry,
+    one process rescans under a lock while others serve the previous scan.
+    A changed signature triggers a fresh scan for every caller, but only the
+    lock owner may publish its snapshot to the shared cache.
+    """
+    ttl = _scan_ttl()
+    if ttl == 0 or not skills_dir.is_dir():
+        return scan_catalog(skills_dir)
+    try:
+        sig = _signature(skills_dir)
+    except OSError:
+        # A category can disappear between is_dir() and scandir/stat().
+        # The per-file scanner already tolerates disappearing skill paths.
+        return scan_catalog(skills_dir)
+    records: tuple[SkillRecord, ...] = ()
+    same = False
+    try:
+        data = json.loads(cache.read_text(encoding="utf-8"))
+        records = tuple(SkillRecord(**{**r, "tags": tuple(r["tags"])}) for r in data["records"])
+        same = data["sig"] == sig
+        if same and 0 <= time.time() - data["ts"] < ttl:  # a ts in the future (clock moved back) is stale
+            return records
+    except (OSError, ValueError, KeyError, TypeError):
+        same = False
+    if not same:
+        _SCAN_CACHE.pop(str(skills_dir), None)  # the tree changed: the in-process walk is stale too
+    lock = cache.with_name(cache.name + ".lock")
+    owner = False
+    try:
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        if lock.exists() and not 0 <= time.time() - lock.stat().st_mtime <= _LOCK_STALE_S:
+            lock.unlink()  # left behind by a scanner that died (or stamped by a clock that moved)
+        os.close(os.open(lock, os.O_CREAT | os.O_EXCL))
+        owner = True
+    except FileExistsError:
+        if same:
+            return records  # another process is rescanning: serve the previous scan
+    except OSError:
+        pass
+    try:
+        fresh = scan_catalog(skills_dir)
+        tmp = cache.with_name(f"{cache.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+        if owner:
+            with contextlib.suppress(OSError):
+                tmp.write_text(
+                    json.dumps({"sig": sig, "ts": time.time(), "records": [asdict(r) for r in fresh]}),
+                    encoding="utf-8",
+                )
+                os.replace(tmp, cache)
+            with contextlib.suppress(OSError):
+                tmp.unlink(missing_ok=True)
+        return fresh
+    finally:
+        if owner:
+            with contextlib.suppress(OSError):
+                lock.unlink()

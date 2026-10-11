@@ -124,9 +124,12 @@ python scripts/analyze_v2_metrics.py data/v2_injections.jsonl
 
 ### Performance
 
-- Skills-tree walks are TTL-cached (`SKILL_ROUTER_SCAN_TTL`, default 15 s;
-  content edits apply instantly, new skills appear within the TTL) and the
-  tokenizer is memoized: routing takes **~16 ms** per message.
+- Skills-tree walks are TTL-cached (`SKILL_ROUTER_SCAN_TTL`, default 15 s) and
+  the tokenizer is memoized: routing takes **~16 ms** per message.
+- The parsed catalog is shared across processes in `catalog-cache.json` next to
+  the audit log: skills added or removed directly under the root or a first-level
+  category appear on the next call. Deeper tree changes and edits inside a
+  `SKILL.md` appear within `SKILL_ROUTER_SCAN_TTL` (`0` turns the shared cache off).
 - Injections use a compact one-line format — **~70 tokens** each
   (⌀ ~276 characters), 0 tokens for same-topic follow-ups.
 

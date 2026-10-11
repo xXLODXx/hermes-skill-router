@@ -13,7 +13,7 @@ from pathlib import Path
 
 from . import engine
 from .v2.audit import record as record_audit
-from .v2.catalog import scan_catalog
+from .v2.catalog import cached_catalog
 from .v2.evidence import tokens
 from .v2.learning import context_rescue_enabled, output_learning_enabled
 from .v2.models import Evidence, SessionTurn
@@ -187,7 +187,7 @@ def register(ctx):
         if turn is None:
             return None
         home = engine.hermes_home()
-        skills = scan_catalog(home / "skills")
+        skills = cached_catalog(home / "skills", _audit_path().with_name("catalog-cache.json"))
         loaded = _loaded_names(kwargs) | turn.already_loaded
         matrix_active = bool((path := _matrix_path()) and path.is_file())
         matrix, matrix_source = _matrix_evidence(user_message or "")

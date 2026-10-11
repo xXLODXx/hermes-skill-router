@@ -1,6 +1,7 @@
 """V2 contract tests: evidence, session isolation and fail-safe behavior."""
 
 import json
+import os
 from pathlib import Path
 
 from skill_router.v2.audit import record
@@ -571,3 +572,141 @@ def test_negated_skill_name_is_not_explicit_or_selected() -> None:
 
     assert decision.candidates == ()
     assert decision.explicit_skill_count == 0
+
+
+def test_cached_catalog_is_shared_and_follows_added_skills(monkeypatch, tmp_path: Path) -> None:
+    """A second process reads the shared cache instead of re-reading every SKILL.md."""
+    from skill_router.v2 import catalog as catalog_mod
+
+    monkeypatch.delenv("SKILL_ROUTER_SCAN_TTL", raising=False)
+    skills, cache = _skills(tmp_path), tmp_path / "data" / "catalog-cache.json"
+    first = catalog_mod.cached_catalog(skills, cache)
+    assert first == scan_catalog(skills) and cache.is_file()
+    scans: list[Path] = []
+    monkeypatch.setattr(catalog_mod, "scan_catalog", lambda d: scans.append(d) or ())
+    assert catalog_mod.cached_catalog(skills, cache) == first and not scans, "fresh cache is read"
+    monkeypatch.setattr(catalog_mod, "scan_catalog", scan_catalog)
+    folder = skills / "software-development"
+    mtime = folder.stat().st_mtime_ns
+    fresh = folder / "fresh-skill"
+    fresh.mkdir()
+    (fresh / "SKILL.md").write_text("---\nname: fresh-skill\n---\n", encoding="utf-8")
+    os.utime(folder, ns=(mtime + 10**9, mtime + 10**9))  # coarse fs clocks may not tick within a test
+    names = {r.name for r in catalog_mod.cached_catalog(skills, cache)}
+    assert "fresh-skill" in names, "an added skill shows up on the next call, not after the walk TTL"
+    stored = json.loads(cache.read_text(encoding="utf-8"))["records"]
+    assert "fresh-skill" in {r["name"] for r in stored}, "and the shared cache carries it to other processes"
+
+
+def test_cached_catalog_survives_a_dangling_skill_link(monkeypatch, tmp_path: Path) -> None:
+    """A dangling junction or symlink in the skills root cannot be stat'ed; routing must not fail on it."""
+    from skill_router.v2 import catalog as catalog_mod
+
+    monkeypatch.delenv("SKILL_ROUTER_SCAN_TTL", raising=False)
+    skills, cache = _skills(tmp_path), tmp_path / "data" / "catalog-cache.json"
+    (skills / "dangling").mkdir()
+    real_stat = os.stat
+
+    def stat(path, *args, **kwargs):
+        if os.fspath(path).endswith("dangling"):
+            raise FileNotFoundError(2, "No such file or directory", os.fspath(path))
+        return real_stat(path, *args, **kwargs)
+
+    monkeypatch.setattr(catalog_mod.os, "stat", stat)
+    assert catalog_mod.cached_catalog(skills, cache) == scan_catalog(skills)
+
+
+def test_cached_catalog_treats_a_future_timestamp_as_stale(monkeypatch, tmp_path: Path) -> None:
+    """A clock that moved back must not freeze the cache until it catches up."""
+    from skill_router.v2 import catalog as catalog_mod
+
+    monkeypatch.delenv("SKILL_ROUTER_SCAN_TTL", raising=False)
+    skills, cache = _skills(tmp_path), tmp_path / "data" / "catalog-cache.json"
+    catalog_mod.cached_catalog(skills, cache)
+    data = json.loads(cache.read_text(encoding="utf-8"))
+    data["ts"] += 3600
+    cache.write_text(json.dumps(data), encoding="utf-8")
+    scans: list[Path] = []
+    monkeypatch.setattr(catalog_mod, "scan_catalog", lambda d: scans.append(d) or ())
+    catalog_mod.cached_catalog(skills, cache)
+    assert scans, "a cache stamped in the future is rescanned"
+
+
+def test_cached_catalog_serves_previous_scan_while_another_process_rescans(monkeypatch, tmp_path: Path) -> None:
+    from skill_router.v2 import catalog as catalog_mod
+
+    skills, cache = _skills(tmp_path), tmp_path / "data" / "catalog-cache.json"
+    first = catalog_mod.cached_catalog(skills, cache)
+    scans: list[Path] = []
+    monkeypatch.setattr(catalog_mod, "scan_catalog", lambda d: scans.append(d) or ())
+    monkeypatch.setattr(catalog_mod, "_scan_ttl", lambda: -1.0)  # cache always expired
+    lock = cache.with_name(cache.name + ".lock")
+    lock.write_text("", encoding="utf-8")
+    assert catalog_mod.cached_catalog(skills, cache) == first and not scans
+    assert lock.exists(), "the other process's lock is left alone"
+    lock.unlink()
+    catalog_mod.cached_catalog(skills, cache)
+    assert scans and not lock.exists(), "without a lock this process rescans and releases its lock"
+
+
+def test_cached_catalog_does_not_publish_without_lock_on_changed_tree(monkeypatch, tmp_path: Path) -> None:
+    """An unlocked second scanner cannot replace the lock owner's future snapshot."""
+    from skill_router.v2 import catalog as catalog_mod
+
+    monkeypatch.delenv("SKILL_ROUTER_SCAN_TTL", raising=False)
+    skills, cache = _skills(tmp_path), tmp_path / "data" / "catalog-cache.json"
+    catalog_mod.cached_catalog(skills, cache)
+    before = cache.read_bytes()
+    lock = cache.with_name(cache.name + ".lock")
+    lock.write_text("", encoding="utf-8")
+    folder = skills / "software-development"
+    new_skill = folder / "added-during-locked-scan"
+    new_skill.mkdir()
+    (new_skill / "SKILL.md").write_text("---\nname: added-during-locked-scan\n---\n", encoding="utf-8")
+    result = catalog_mod.cached_catalog(skills, cache)
+    assert "added-during-locked-scan" in {r.name for r in result}
+    assert cache.read_bytes() == before, "only the owner of an existing lock may publish"
+    assert lock.exists()
+
+
+def test_cached_catalog_refreshes_nested_changes_on_ttl(monkeypatch, tmp_path: Path) -> None:
+    """Nested categories are outside the cheap first-level signature, not permanent cache misses."""
+    from skill_router.v2 import catalog as catalog_mod
+
+    monkeypatch.setenv("SKILL_ROUTER_SCAN_TTL", "1")
+    skills, cache = _skills(tmp_path), tmp_path / "data" / "catalog-cache.json"
+    nested = skills / "software-development" / "subsection"
+    nested.mkdir()
+    catalog_mod.cached_catalog(skills, cache)
+    added = nested / "nested-new"
+    added.mkdir()
+    (added / "SKILL.md").write_text("---\nname: nested-new\n---\n", encoding="utf-8")
+    assert "nested-new" not in {r.name for r in catalog_mod.cached_catalog(skills, cache)}
+    data = json.loads(cache.read_text(encoding="utf-8"))
+    data["ts"] -= 2
+    cache.write_text(json.dumps(data), encoding="utf-8")
+    monkeypatch.setattr(catalog_mod.time, "monotonic", lambda: 999999999.0)
+    assert "nested-new" in {r.name for r in catalog_mod.cached_catalog(skills, cache)}
+
+
+def test_cached_catalog_falls_back_when_signature_races_tree_change(monkeypatch, tmp_path: Path) -> None:
+    from skill_router.v2 import catalog as catalog_mod
+
+    skills, cache = _skills(tmp_path), tmp_path / "data" / "catalog-cache.json"
+    monkeypatch.setattr(catalog_mod, "_signature", lambda _: (_ for _ in ()).throw(FileNotFoundError()))
+    assert catalog_mod.cached_catalog(skills, cache) == scan_catalog(skills)
+
+
+def test_catalog_never_routes_to_archived_or_backup_skills(tmp_path: Path) -> None:
+    """The catalog must agree with Hermes: curator archives are not active skills."""
+    from skill_router.v2 import catalog as catalog_mod
+
+    skills = _skills(tmp_path)
+    for hidden in (".archive", ".curator_backups", ".git"):
+        archived = skills / hidden / "obsolete"
+        archived.mkdir(parents=True)
+        (archived / "SKILL.md").write_text("---\nname: obsolete\n---\n", encoding="utf-8")
+    cache = tmp_path / "data" / "catalog-cache.json"
+    assert {r.name for r in scan_catalog(skills)} == {"android-emulator", "pdf-extraction"}
+    cached_names = {r.name for r in catalog_mod.cached_catalog(skills, cache)}
+    assert cached_names == {"android-emulator", "pdf-extraction"}
